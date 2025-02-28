@@ -1,0 +1,59 @@
+version: '3.8'
+services:
+  migrate:
+      build: .
+      command: python -c "from aggregator_backend.db.db_init import create_db; create_db()"
+      volumes:
+        - ./data:/app/data
+      depends_on:
+        - redis
+
+  redis:
+    image: redis:7
+    container_name: aggregator_redis
+    ports:
+      - "6379:6379"
+
+  worker:
+    build: .
+    environment:
+      - BROKER_URL=redis://redis:6379/0
+      - BACKEND_URL=redis://redis:6379/0
+      - TWITTER_BEARER=${TWITTER_BEARER}
+      - YOUTUBE_API_KEY=${YOUTUBE_API_KEY}
+      - REDDIT_CLIENT_ID=${REDDIT_CLIENT_ID}
+      - REDDIT_SECRET=${REDDIT_SECRET}
+    container_name: aggregator_worker
+    # No Windows, use --pool=solo ou --pool=threads para evitar problemas de permissão
+    command: celery -A aggregator_backend.celery_app.celery worker --pool=solo --loglevel=info --events
+    depends_on:
+      - redis
+      - migrate
+    volumes:
+      - ./data:/app/data
+
+  beat:
+    build: .
+    container_name: aggregator_beat
+    command: celery -A aggregator_backend.celery_app.celery beat --loglevel=info
+    depends_on:
+      - redis
+      - migrate
+    volumes:
+      - ./data:/app/data
+
+  flower:
+    build: .
+    container_name: aggregator_flower
+    command: celery -A aggregator_backend.celery_app.celery flower --port=5555 --loglevel=info
+    depends_on:
+      - redis
+      - migrate
+    environment:
+      - BROKER_URL=redis://redis:6379/0
+      - BACKEND_URL=redis://redis:6379/0
+      # Se precisar de API keys, etc., adicione aqui também
+    volumes:
+      - ./data:/app/data
+    ports:
+      - "5555:5555"
