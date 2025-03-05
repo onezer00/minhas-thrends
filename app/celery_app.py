@@ -12,9 +12,22 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Configurações do Celery
-CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL", "redis://redis:6379/0")
-CELERY_RESULT_BACKEND = os.getenv("CELERY_RESULT_BACKEND", "redis://redis:6379/0")
+# Obtém as URLs do broker e backend do Celery
+CELERY_BROKER_URL = os.environ.get("CELERY_BROKER_URL", "redis://localhost:6379/0")
+CELERY_RESULT_BACKEND = os.environ.get("CELERY_RESULT_BACKEND", "redis://localhost:6379/0")
+
+# Verifica se estamos no Render.com e ajusta as URLs se necessário
+if os.environ.get("RENDER", ""):
+    # No Render, o nome do serviço Redis pode ser diferente
+    redis_service_name = os.environ.get("REDIS_SERVICE_NAME", "")
+    if redis_service_name:
+        logger.info(f"Detectado ambiente Render com serviço Redis: {redis_service_name}")
+        CELERY_BROKER_URL = f"redis://{redis_service_name}:6379/0"
+        CELERY_RESULT_BACKEND = f"redis://{redis_service_name}:6379/0"
+
+# Log das URLs que serão usadas
+logger.info(f"Celery Broker URL: {CELERY_BROKER_URL}")
+logger.info(f"Celery Result Backend: {CELERY_RESULT_BACKEND}")
 
 # Cria a instância do Celery
 celery = Celery(
@@ -50,6 +63,10 @@ celery.conf.update(
     task_acks_late=True,
     task_reject_on_worker_lost=True,
     task_time_limit=1800,
+    
+    # Configurações de pool de conexões do Redis
+    broker_pool_limit=5,  # Reduzido para evitar muitas conexões
+    redis_max_connections=10,  # Reduzido para evitar muitas conexões
     
     # Configurações de heartbeat
     broker_heartbeat=10,

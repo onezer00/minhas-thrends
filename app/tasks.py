@@ -63,67 +63,71 @@ def check_redis_connection():
     import os
     import time
     
-    broker_url = os.environ.get('CELERY_BROKER_URL', 'redis://localhost:6379/0')
-    logger.info(f"Tentando conectar ao Redis usando: {broker_url}")
+    # Obter a URL do broker do Celery
+    broker_url = os.environ.get('CELERY_BROKER_URL', '')
+    if not broker_url:
+        logger.error("CELERY_BROKER_URL não configurada!")
+        return False
     
-    # Lista de possíveis URLs para tentar
-    urls_to_try = [
-        broker_url,
-        broker_url.replace('redis://', 'redis://trendpulse-redis:6379/'),
-        broker_url.replace('redis://', 'redis://trendpulse-redis.internal:6379/'),
-        broker_url.replace('redis://', 'redis://trendpulse-redis.onrender.com:6379/'),
-        'redis://trendpulse-redis.internal:6379/0',
-        'redis://trendpulse-redis:6379/0',
-        'redis://trendpulse-redis.onrender.com:6379/0',
-        'redis://localhost:6379/0'
-    ]
+    # Extrair apenas o host e porta para o log (sem credenciais)
+    safe_url = broker_url
+    if '@' in broker_url:
+        safe_url = broker_url.split('@')[1]
     
-    # Adicionar URLs com o nome completo do serviço Redis no Render
-    redis_service_name = os.environ.get('REDIS_SERVICE_NAME', '')
-    if redis_service_name:
-        urls_to_try.insert(0, f'redis://{redis_service_name}:6379/0')
+    logger.info(f"Tentando conectar ao Redis: {safe_url}")
+    
+    try:
+        # Tentar conectar usando a URL do broker
+        client = redis.from_url(broker_url)
+        ping_result = client.ping()
+        logger.info(f"Conexão com Redis bem-sucedida! Ping: {ping_result}")
+        return True
+    except Exception as e:
+        logger.error(f"Erro ao conectar ao Redis: {str(e)}")
         
-    # Extrair o nome do serviço Redis da URL atual, se possível
-    if 'redis://' in broker_url:
-        parts = broker_url.split('redis://')[1].split(':')
-        if len(parts) > 0 and parts[0]:
-            redis_host = parts[0]
-            if '.' not in redis_host and '-' in redis_host:
-                # Parece ser um nome de serviço Render, tente variações
-                urls_to_try.insert(0, f'redis://{redis_host}:6379/0')
-    
-    # Remover duplicatas
-    urls_to_try = list(dict.fromkeys(urls_to_try))
-    
-    # Tentar cada URL
-    for url in urls_to_try:
-        try:
-            logger.info(f"Tentando conectar ao Redis com URL: {url}")
-            client = redis.Redis.from_url(url)
-            ping_result = client.ping()
-            logger.info(f"Conexão com Redis bem-sucedida usando {url}! Ping: {ping_result}")
-            
-            # Se a URL for diferente da original, atualizar as variáveis de ambiente
-            if url != broker_url:
-                logger.info(f"Atualizando variáveis de ambiente para usar a URL do Redis: {url}")
-                os.environ['CELERY_BROKER_URL'] = url
-                os.environ['CELERY_RESULT_BACKEND'] = url
+        # Tentar extrair o host do Redis da URL
+        if 'redis://' in broker_url:
+            try:
+                # Extrair o host do Redis
+                host_part = broker_url.split('redis://')[1].split(':')[0]
+                if '@' in host_part:
+                    host_part = host_part.split('@')[1]
                 
-                # Tentar atualizar também a configuração do Celery se estiver disponível
-                try:
-                    from celery import current_app
-                    current_app.conf.broker_url = url
-                    current_app.conf.result_backend = url
-                    logger.info("Configuração do Celery atualizada com a nova URL do Redis")
-                except Exception as e:
-                    logger.warning(f"Não foi possível atualizar a configuração do Celery: {str(e)}")
-            
-            return True
-        except Exception as e:
-            logger.warning(f"Falha ao conectar ao Redis usando {url}: {str(e)}")
-    
-    logger.error("Não foi possível conectar ao Redis usando nenhuma das URLs tentadas")
-    return False
+                # Tentar diferentes formatos de URL
+                alternate_urls = [
+                    f"redis://{host_part}:6379/0",
+                    f"redis://trendpulse-redis:6379/0",
+                    f"redis://trendpulse-redis.internal:6379/0",
+                    f"redis://localhost:6379/0"
+                ]
+                
+                for url in alternate_urls:
+                    try:
+                        logger.info(f"Tentando URL alternativa: {url}")
+                        client = redis.from_url(url)
+                        if client.ping():
+                            logger.info(f"Conexão bem-sucedida com URL alternativa: {url}")
+                            
+                            # Atualizar as variáveis de ambiente
+                            os.environ['CELERY_BROKER_URL'] = url
+                            os.environ['CELERY_RESULT_BACKEND'] = url
+                            
+                            # Tentar atualizar a configuração do Celery
+                            try:
+                                from app.celery_app import celery
+                                celery.conf.broker_url = url
+                                celery.conf.result_backend = url
+                                logger.info("Configuração do Celery atualizada")
+                            except Exception as ce:
+                                logger.warning(f"Não foi possível atualizar a configuração do Celery: {str(ce)}")
+                            
+                            return True
+                    except Exception as inner_e:
+                        logger.warning(f"Falha com URL alternativa {url}: {str(inner_e)}")
+            except Exception as parse_e:
+                logger.error(f"Erro ao analisar a URL do Redis: {str(parse_e)}")
+        
+        return False
 
 # Hook para verificar conexão antes de cada task
 @task_prerun.connect
@@ -144,7 +148,21 @@ def setup_initial_tasks(sender, **kwargs):
     Função que verifica se o banco está vazio e, em caso positivo,
     dispara a busca de tendências imediatamente.
     """
+    # Verifica se está rodando no serviço Flower
+    service = os.environ.get('SERVICE', '')
+    if service == 'flower':
+        logger.info("Rodando como serviço Flower, pulando verificação do banco de dados.")
+        return
+    
+    # Verificar conexão com Redis antes de prosseguir
+    if not check_redis_connection():
+        logger.error("Não foi possível conectar ao Redis. Pulando inicialização de tarefas.")
+        return
+        
     try:
+        # Importa os modelos e conexão com o banco
+        from app.models import SessionLocal, Trend
+        
         # Cria uma sessão
         db = SessionLocal()
         
@@ -157,10 +175,18 @@ def setup_initial_tasks(sender, **kwargs):
         if trend_count == 0:
             logger.info("Banco de dados vazio. Iniciando busca inicial de tendências...")
             # Dispara as tarefas de busca de tendências imediatamente
-            fetch_all_trends()
+            try:
+                # Usar apply_async em vez de delay
+                task = fetch_all_trends.apply_async()
+                logger.info(f"Tarefa de busca inicial agendada com ID: {task}")
+            except Exception as e:
+                logger.error(f"Erro ao agendar tarefa inicial: {str(e)}")
+                # Tentar executar diretamente como fallback
+                logger.info("Tentando executar a tarefa diretamente...")
+                result = fetch_all_trends()
+                logger.info(f"Resultado da execução direta: {result}")
         else:
             logger.info(f"Banco de dados contém {trend_count} tendências. Seguindo agendamento normal.")
-            
     except Exception as e:
         logger.error(f"Erro ao verificar o banco de dados: {str(e)}")
 
@@ -186,10 +212,13 @@ def fetch_all_trends():
         
         # YouTube
         try:
-            fetch_youtube_trends.delay()
+            # Importar a tarefa localmente para evitar problemas de importação circular
+            youtube_task = fetch_youtube_trends
+            # Chamar a tarefa diretamente em vez de usar delay()
+            youtube_task_id = youtube_task.apply_async()
             atualizacoes["youtube"] = {
                 "executado": True,
-                "mensagem": "Iniciada atualização do YouTube"
+                "mensagem": f"Iniciada atualização do YouTube (task_id: {youtube_task_id})"
             }
         except Exception as e:
             logger.error(f"Erro ao iniciar busca do YouTube: {str(e)}")
@@ -200,10 +229,13 @@ def fetch_all_trends():
         
         # Reddit
         try:
-            fetch_reddit_trends.delay()
+            # Importar a tarefa localmente para evitar problemas de importação circular
+            reddit_task = fetch_reddit_trends
+            # Chamar a tarefa diretamente em vez de usar delay()
+            reddit_task_id = reddit_task.apply_async()
             atualizacoes["reddit"] = {
                 "executado": True,
-                "mensagem": "Iniciada atualização do Reddit"
+                "mensagem": f"Iniciada atualização do Reddit (task_id: {reddit_task_id})"
             }
         except Exception as e:
             logger.error(f"Erro ao iniciar busca do Reddit: {str(e)}")
