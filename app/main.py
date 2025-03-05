@@ -141,8 +141,18 @@ def trigger_fetch_trends():
             
         # Disparar a tarefa
         from app.tasks import fetch_all_trends
-        task = fetch_all_trends.delay()
-        return {"message": "Tarefa de busca de tendências iniciada", "task_id": task.id}
+        try:
+            # Usar apply_async em vez de delay
+            task = fetch_all_trends.apply_async()
+            return {"message": "Tarefa de busca de tendências iniciada", "task_id": str(task)}
+        except Exception as task_error:
+            logger.error(f"Erro ao disparar a tarefa: {str(task_error)}")
+            # Tentar executar a tarefa diretamente como fallback
+            result = fetch_all_trends()
+            return {
+                "message": "Tarefa executada diretamente (sem Celery)",
+                "result": result
+            }
     except Exception as e:
         logger.error(f"Erro ao disparar tarefa: {str(e)}")
         return {"status": "error", "message": str(e)}
