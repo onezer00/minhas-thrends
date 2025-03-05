@@ -8,11 +8,10 @@ services:
     healthCheckPath: /api/status
     envVars:
       - key: DATABASE_URL
-        fromDatabase:
+        fromService:
           name: trendpulse-db
+          type: postgres
           property: connectionString
-          replaceIn: mysql://
-          replacementPattern: mysql+pymysql://
       - key: CELERY_BROKER_URL
         fromService:
           name: trendpulse-redis
@@ -74,11 +73,10 @@ services:
     plan: free
     envVars:
       - key: DATABASE_URL
-        fromDatabase:
+        fromService:
           name: trendpulse-db
+          type: postgres
           property: connectionString
-          replaceIn: mysql://
-          replacementPattern: mysql+pymysql://
       - key: CELERY_BROKER_URL
         fromService:
           name: trendpulse-redis
@@ -112,11 +110,10 @@ services:
     plan: free
     envVars:
       - key: DATABASE_URL
-        fromDatabase:
+        fromService:
           name: trendpulse-db
+          type: postgres
           property: connectionString
-          replaceIn: mysql://
-          replacementPattern: mysql+pymysql://
       - key: CELERY_BROKER_URL
         fromService:
           name: trendpulse-redis
@@ -139,13 +136,9 @@ services:
     maxmemoryPolicy: allkeys-lru
     ipAllowList: []
 
-  # MySQL Database
-  - type: mysql
+  # PostgreSQL Database
+  - type: postgres
     name: trendpulse-db
     plan: free
-    version: "8"
-    envVars:
-      - key: MYSQL_ROOT_PASSWORD
-        generateValue: true
-      - key: MYSQL_DATABASE
-        value: trendpulse
+    ipAllowList: []
+    postgresMajorVersion: 15

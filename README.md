@@ -71,8 +71,8 @@ REDDIT_SECRET=your_reddit_secret
 REDDIT_USERNAME=your_reddit_username
 REDDIT_PASSWORD=your_reddit_password
 
-# Configuração do Banco de Dados
-DATABASE_URL=sqlite:///data/aggregator.db
+# Configuração do Banco de Dados (desenvolvimento)
+DATABASE_URL=mysql+pymysql://root:root@localhost:3307/trendpulse
 
 # Ambiente (development/production)
 ENVIRONMENT=development
@@ -80,6 +80,32 @@ ENVIRONMENT=development
 # URL do GitHub Pages (produção)
 GITHUB_PAGES_URL=https://seu-usuario.github.io
 ```
+
+### Configuração de Banco de Dados
+
+O projeto está configurado para usar diferentes bancos de dados dependendo do ambiente:
+
+#### Ambiente de Desenvolvimento
+- **MySQL**: Usado localmente durante o desenvolvimento
+- String de conexão: `mysql+pymysql://root:root@mysql:3306/trendpulse` (dentro do Docker)
+- String de conexão: `mysql+pymysql://root:root@localhost:3307/trendpulse` (fora do Docker)
+
+#### Ambiente de Produção (Render)
+- **PostgreSQL**: Usado em produção no Render
+- String de conexão: Fornecida automaticamente pelo Render
+- O sistema detecta automaticamente o ambiente e ajusta a conexão
+
+#### Fallback
+- **SQLite**: Usado como fallback em caso de falha na conexão com MySQL/PostgreSQL
+- Localização: Diretório temporário do sistema ou em memória como último recurso
+
+### Dependências de Banco de Dados
+
+O projeto inclui drivers para ambos os bancos de dados:
+- `pymysql` e `mysqlclient` para MySQL
+- `psycopg2-binary` para PostgreSQL
+
+O sistema detecta automaticamente qual driver usar com base na string de conexão.
 
 ## Estrutura do Projeto
 
@@ -232,10 +258,11 @@ Acesse o dashboard do Flower em `http://localhost:5555` para monitorar:
 
 ### Problemas Comuns
 
-1. **Erro de Conexão com MySQL:**
-   - Verifique se o container do MySQL está rodando: `docker-compose ps`
-   - Verifique os logs: `docker-compose logs mysql`
+1. **Erro de Conexão com Banco de Dados:**
+   - Verifique se o container do banco de dados está rodando: `docker-compose ps`
+   - Verifique os logs: `docker-compose logs mysql` (desenvolvimento) ou `docker-compose logs postgres` (produção)
    - Execute o script de diagnóstico: `python -m app.check_db`
+   - Em produção (Render), verifique se o serviço PostgreSQL está ativo
 
 2. **Tasks Não Executando:**
    - Verifique os logs do worker: `docker-compose logs worker`
@@ -253,9 +280,10 @@ Acesse o dashboard do Flower em `http://localhost:5555` para monitorar:
    ```
 
 5. **Problemas com o Banco de Dados:**
-   - O sistema agora tem um fallback automático para SQLite em caso de falha na conexão com MySQL
-   - Em desenvolvimento, ele usará um arquivo SQLite no diretório temporário
-   - Em último caso, usará SQLite em memória (os dados serão perdidos ao reiniciar)
+   - O sistema detecta automaticamente o ambiente e usa o driver apropriado:
+     - MySQL com pymysql em desenvolvimento
+     - PostgreSQL com psycopg2 em produção
+   - Em caso de falha, o sistema tem um fallback automático para SQLite
    - Para diagnosticar problemas de conexão: `python -m app.check_db --max-attempts 5 --wait-time 10`
 
 6. **Problemas com o Redis:**
@@ -287,7 +315,7 @@ Para fazer o deploy da aplicação no Render.com:
    - Worker do Celery
    - Celery Beat
    - Redis
-   - MySQL Database
+   - PostgreSQL Database
 
 5. Configure as variáveis de ambiente secretas:
    - `YOUTUBE_API_KEY`
@@ -297,8 +325,18 @@ Para fazer o deploy da aplicação no Render.com:
    - `REDDIT_PASSWORD`
    - `GITHUB_PAGES_URL`
    - `FLOWER_BASIC_AUTH` (opcional, formato: "usuario:senha")
+   - `ENVIRONMENT=production` (importante para usar PostgreSQL)
 
 6. Clique em "Apply" para iniciar o deploy.
+
+### Banco de Dados no Render
+
+O projeto está configurado para usar PostgreSQL em produção no Render:
+
+1. O arquivo `render.yaml` define um serviço PostgreSQL com o nome `trendpulse-db`
+2. O sistema detecta automaticamente o ambiente de produção e configura o driver psycopg2
+3. A string de conexão é fornecida automaticamente pelo Render
+4. Em caso de falha, o sistema tem um fallback para SQLite
 
 ### Acessando o Flower no Render
 
@@ -322,11 +360,11 @@ O Flower no Render permite que você:
 
 Se encontrar problemas durante o deploy no Render, verifique:
 
-1. **Erro de conexão com o MySQL**:
-   - Verifique se o serviço MySQL está em execução no dashboard do Render
-   - Verifique se a string de conexão está correta (deve usar `mysql+pymysql://`)
+1. **Erro de conexão com o banco de dados**:
+   - Verifique se o serviço PostgreSQL está em execução no dashboard do Render
+   - O sistema detecta automaticamente o ambiente de produção e configura o driver psycopg2
    - O script `check_db.py` tentará se conectar várias vezes e mostrará logs detalhados
-   - O sistema agora tem fallback automático para SQLite em caso de falha na conexão
+   - O sistema tem fallback automático para SQLite em caso de falha na conexão
 
 2. **Erro de conexão com o Redis**:
    - Se encontrar erros como `'NoneType' object has no attribute 'push'` ou `Name or service not known`

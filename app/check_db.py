@@ -73,25 +73,58 @@ def check_database_connection():
     from sqlalchemy import create_engine, text
     
     database_url = os.environ.get('DATABASE_URL')
+    environment = os.environ.get('ENVIRONMENT', 'development')
     logger.info(f"Verificando conexão com o banco de dados: {database_url}")
+    logger.info(f"Ambiente: {environment}")
     
-    # Se for uma URL MySQL, certifique-se de que está usando o driver pymysql
-    if database_url and database_url.startswith('mysql://'):
-        database_url = database_url.replace('mysql://', 'mysql+pymysql://')
-        logger.info(f"URL ajustada para usar pymysql: {database_url}")
-    
-    # Substitui localhost pelo nome do serviço no Render se necessário
-    if database_url and "@localhost" in database_url:
-        database_url = database_url.replace("@localhost", "@trendpulse-db.internal")
-        logger.info(f"URL ajustada para ambiente Render (localhost -> trendpulse-db.internal): {database_url}")
+    # Ajusta a URL com base no ambiente e tipo de banco de dados
+    if environment == 'production':
+        logger.info("Ambiente de produção detectado, verificando configuração para PostgreSQL")
+        
+        # Se for uma URL PostgreSQL, certifique-se de que está usando o driver psycopg2
+        if database_url and "postgres" in database_url:
+            if "postgresql://" in database_url and "psycopg2" not in database_url:
+                database_url = database_url.replace("postgresql://", "postgresql+psycopg2://")
+                logger.info(f"URL ajustada para usar psycopg2: {database_url}")
+            
+            # Substitui localhost pelo nome do serviço no Render se necessário
+            if "@localhost" in database_url:
+                database_url = database_url.replace("@localhost", "@trendpulse-db.internal")
+                logger.info(f"URL ajustada para ambiente Render (localhost -> trendpulse-db.internal): {database_url}")
+    else:
+        logger.info("Ambiente de desenvolvimento detectado, verificando configuração para MySQL")
+        
+        # Se for uma URL MySQL, certifique-se de que está usando o driver pymysql
+        if database_url and "mysql" in database_url:
+            if "mysql://" in database_url and "pymysql" not in database_url:
+                database_url = database_url.replace("mysql://", "mysql+pymysql://")
+                logger.info(f"URL ajustada para usar pymysql: {database_url}")
+            
+            # Substitui localhost pelo nome do serviço no Docker Compose se necessário
+            if "@localhost" in database_url:
+                database_url = database_url.replace("@localhost", "@mysql")
+                logger.info(f"URL ajustada para ambiente Docker (localhost -> mysql): {database_url}")
     
     # Lista de URLs para tentar
-    urls_to_try = [
-        database_url,
-        database_url.replace("@localhost", "@trendpulse-db.internal") if database_url and "@localhost" in database_url else None,
-        database_url.replace("@mysql", "@trendpulse-db.internal") if database_url and "@mysql" in database_url else None,
-        database_url.replace("@trendpulse-db", "@trendpulse-db.internal") if database_url and "@trendpulse-db" in database_url else None,
-    ]
+    urls_to_try = [database_url]
+    
+    # Adiciona URLs alternativas com base no ambiente
+    if environment == 'production':
+        # Adiciona URLs alternativas para PostgreSQL no Render
+        if database_url and "postgres" in database_url:
+            urls_to_try.extend([
+                database_url.replace("@localhost", "@trendpulse-db.internal") if "@localhost" in database_url else None,
+                database_url.replace("@postgres", "@trendpulse-db.internal") if "@postgres" in database_url else None,
+                database_url.replace("@trendpulse-db", "@trendpulse-db.internal") if "@trendpulse-db" in database_url else None,
+            ])
+    else:
+        # Adiciona URLs alternativas para MySQL em desenvolvimento
+        if database_url and "mysql" in database_url:
+            urls_to_try.extend([
+                database_url.replace("@localhost", "@mysql") if "@localhost" in database_url else None,
+                "mysql+pymysql://root:root@mysql:3306/trendpulse",
+                "mysql+pymysql://root:root@localhost:3307/trendpulse",
+            ])
     
     # Remover None e duplicatas
     urls_to_try = [url for url in urls_to_try if url]
