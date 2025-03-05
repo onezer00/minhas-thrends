@@ -7,15 +7,6 @@ services:
     plan: free
     healthCheckPath: /api/status
     buildCommand: pip install -r requirements.txt
-    startCommand: >
-      bash -c "
-        echo 'Verificando conexões com banco de dados e Redis...' &&
-        python -m aggregator_backend.check_db --max-attempts 10 --wait-time 10 &&
-        echo 'Criando tabelas do banco de dados...' &&
-        python -c 'from aggregator_backend.models import create_tables; create_tables()' &&
-        echo 'Iniciando a API...' &&
-        uvicorn aggregator_backend.main:app --host 0.0.0.0 --port $PORT
-      "
     envVars:
       - key: DATABASE_URL
         fromDatabase:
@@ -57,13 +48,6 @@ services:
     dockerfilePath: ./Dockerfile
     plan: free
     buildCommand: pip install -r requirements.txt
-    startCommand: >
-      bash -c "
-        echo 'Verificando conexão com o Redis...' &&
-        python -m aggregator_backend.check_db --max-attempts 10 --wait-time 10 --skip-db &&
-        echo 'Iniciando o Flower...' &&
-        celery -A aggregator_backend.tasks flower --port=$PORT
-      "
     envVars:
       - key: CELERY_BROKER_URL
         fromService:
@@ -87,15 +71,6 @@ services:
     dockerfilePath: ./Dockerfile
     plan: free
     buildCommand: pip install -r requirements.txt
-    startCommand: >
-      bash -c "
-        echo 'Verificando conexões com banco de dados e Redis...' &&
-        python -m aggregator_backend.check_db --max-attempts 10 --wait-time 10 &&
-        echo 'Aguardando API iniciar...' &&
-        sleep 30 &&
-        echo 'Iniciando o worker...' &&
-        celery -A aggregator_backend.tasks worker --loglevel=info
-      "
     envVars:
       - key: DATABASE_URL
         fromDatabase:
@@ -133,15 +108,6 @@ services:
     dockerfilePath: ./Dockerfile
     plan: free
     buildCommand: pip install -r requirements.txt
-    startCommand: >
-      bash -c "
-        echo 'Verificando conexões com banco de dados e Redis...' &&
-        python -m aggregator_backend.check_db --max-attempts 10 --wait-time 10 &&
-        echo 'Aguardando worker iniciar...' &&
-        sleep 45 &&
-        echo 'Iniciando o beat...' &&
-        celery -A aggregator_backend.tasks beat --loglevel=info
-      "
     envVars:
       - key: DATABASE_URL
         fromDatabase:
@@ -174,7 +140,3 @@ services:
     name: trendpulse-db
     env: docker
     plan: free
-    disk:
-      name: data
-      mountPath: /var/lib/mysql
-      sizeGB: 1
