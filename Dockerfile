@@ -22,5 +22,5 @@ ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONPATH=/app
 
-# O comando será fornecido no docker-compose.yml
-CMD ["uvicorn", "aggregator_backend.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+# O comando será fornecido no docker-compose.yml ou render.yaml
+CMD ["uvicorn", "aggregator_backend.main:app", "--host", "0.0.0.0", "--port", "8000"]

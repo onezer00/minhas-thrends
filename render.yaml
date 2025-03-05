@@ -5,11 +5,22 @@ services:
     env: docker
     dockerfilePath: ./Dockerfile
     plan: free
+    healthCheckPath: /
+    buildCommand: pip install -r requirements.txt
+    startCommand: >
+      bash -c "
+        echo 'Verificando conexão com o banco de dados...' &&
+        python -m aggregator_backend.check_db &&
+        echo 'Iniciando a API...' &&
+        uvicorn aggregator_backend.main:app --host 0.0.0.0 --port $PORT
+      "
     envVars:
       - key: DATABASE_URL
         fromDatabase:
           name: trendpulse-db
           property: connectionString
+          replaceIn: mysql://
+          replacementPattern: mysql+pymysql://
       - key: CELERY_BROKER_URL
         fromService:
           name: trendpulse-redis
@@ -41,12 +52,21 @@ services:
     env: docker
     dockerfilePath: ./Dockerfile
     plan: free
-    command: celery -A aggregator_backend.tasks worker --loglevel=info
+    buildCommand: pip install -r requirements.txt
+    startCommand: >
+      bash -c "
+        echo 'Verificando conexão com o banco de dados...' &&
+        python -m aggregator_backend.check_db &&
+        echo 'Iniciando o worker...' &&
+        celery -A aggregator_backend.tasks worker --loglevel=info
+      "
     envVars:
       - key: DATABASE_URL
         fromDatabase:
           name: trendpulse-db
           property: connectionString
+          replaceIn: mysql://
+          replacementPattern: mysql+pymysql://
       - key: CELERY_BROKER_URL
         fromService:
           name: trendpulse-redis
@@ -74,12 +94,21 @@ services:
     env: docker
     dockerfilePath: ./Dockerfile
     plan: free
-    command: celery -A aggregator_backend.tasks beat --loglevel=info
+    buildCommand: pip install -r requirements.txt
+    startCommand: >
+      bash -c "
+        echo 'Verificando conexão com o banco de dados...' &&
+        python -m aggregator_backend.check_db &&
+        echo 'Iniciando o beat...' &&
+        celery -A aggregator_backend.tasks beat --loglevel=info
+      "
     envVars:
       - key: DATABASE_URL
         fromDatabase:
           name: trendpulse-db
           property: connectionString
+          replaceIn: mysql://
+          replacementPattern: mysql+pymysql://
       - key: CELERY_BROKER_URL
         fromService:
           name: trendpulse-redis

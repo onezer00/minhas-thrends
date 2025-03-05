@@ -253,65 +253,6 @@ Acesse o dashboard do Flower em `http://localhost:5555` para monitorar:
 
 ## Deploy no Render.com
 
-O projeto está configurado para deploy gratuito no Render.com. Siga os passos:
-
-1. Crie uma conta no [Render.com](https://render.com)
-
-2. Conecte seu repositório GitHub ao Render
-
-3. Configure as variáveis de ambiente no Render:
-   ```
-   YOUTUBE_API_KEY=sua_chave_api_youtube
-   REDDIT_CLIENT_ID=seu_client_id_reddit
-   REDDIT_SECRET=seu_secret_reddit
-   REDDIT_USERNAME=seu_usuario_reddit
-   REDDIT_PASSWORD=sua_senha_reddit
-   GITHUB_PAGES_URL=https://seu-usuario.github.io
-   ```
-
-4. Clique em "Deploy" e aguarde a conclusão
-
-O Render irá automaticamente:
-- Criar um banco MySQL gratuito
-- Configurar um Redis gratuito
-- Iniciar os serviços da API, Worker e Beat
-- Configurar as URLs e variáveis de ambiente
-
-### URLs do Serviço
-
-Após o deploy, você terá acesso às seguintes URLs:
-- API: `https://trendpulse-api.onrender.com`
-- Flower Dashboard: `https://trendpulse-api.onrender.com/flower`
-
-### Limitações do Plano Gratuito
-
-- Banco MySQL: 
-  - 256 MB de armazenamento
-  - Backup automático diário
-  - Conexões limitadas
-
-- Redis:
-  - 25 MB de memória
-  - Sem persistência
-  - Conexões limitadas
-
-- Serviços:
-  - Spin down após 15 minutos de inatividade
-  - 512 MB de RAM por serviço
-  - Banda limitada
-
-### Configuração do Frontend
-
-No seu projeto frontend (GitHub Pages), configure a URL da API:
-
-```javascript
-const API_URL = process.env.NODE_ENV === 'production'
-  ? 'https://trendpulse-api.onrender.com'
-  : 'http://localhost:8000';
-```
-
-## Deploy no Render.com
-
 Para fazer o deploy da aplicação no Render.com:
 
 1. Crie uma conta no [Render.com](https://render.com) e conecte seu repositório do GitHub.
@@ -336,6 +277,27 @@ Para fazer o deploy da aplicação no Render.com:
    - `GITHUB_PAGES_URL`
 
 6. Clique em "Apply" para iniciar o deploy.
+
+### Troubleshooting no Render
+
+Se encontrar problemas durante o deploy no Render, verifique:
+
+1. **Erro de conexão com o MySQL**:
+   - Verifique se o serviço MySQL está em execução no dashboard do Render
+   - Verifique se a string de conexão está correta (deve usar `mysql+pymysql://`)
+   - O script `check_db.py` tentará se conectar várias vezes e mostrará logs detalhados
+
+2. **Erro de porta**:
+   - O Render exige que a aplicação use a porta definida na variável de ambiente `PORT`
+   - Nosso `render.yaml` já está configurado para usar `--port $PORT`
+
+3. **Serviços não iniciam**:
+   - Verifique os logs de cada serviço no dashboard do Render
+   - Pode ser necessário reiniciar manualmente os serviços após o primeiro deploy
+
+4. **Problemas de CORS**:
+   - Verifique se a variável `GITHUB_PAGES_URL` está configurada corretamente
+   - Em produção, apenas requisições desse domínio serão aceitas
 
 ### Observações Importantes
 
