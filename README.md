@@ -293,7 +293,8 @@ O Flower estará disponível em uma URL separada fornecida pelo Render. Para ace
 
 1. No dashboard do Render, localize o serviço `trendpulse-flower`
 2. Clique no serviço para ver os detalhes
-3. Use a URL fornecida pelo Render, que será algo como `https://trendpulse-flower.onrender.com/flower`
+3. Use a URL fornecida pelo Render, que será algo como `https://trendpulse-flower.onrender.com`
+   - **Importante**: Não é necessário adicionar `/flower` ao final da URL
 4. Se você configurou a variável `FLOWER_BASIC_AUTH`, será solicitado um nome de usuário e senha
 
 O Flower no Render permite que você:
