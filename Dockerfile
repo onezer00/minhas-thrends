@@ -22,5 +22,5 @@ ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONPATH=/app
 
-# O comando será fornecido no docker-compose.yml ou render.yaml
-CMD ["uvicorn", "aggregator_backend.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Comando de inicialização baseado em uma variável de ambiente
+CMD ["sh", "-c", "if [ \"$SERVICE\" = \"api\" ]; then uvicorn aggregator_backend.main:app --host 0.0.0.0 --port $PORT; elif [ \"$SERVICE\" = \"worker\" ]; then celery -A aggregator_backend.tasks worker --loglevel=info; elif [ \"$SERVICE\" = \"beat\" ]; then celery -A aggregator_backend.tasks beat --loglevel=info; elif [ \"$SERVICE\" = \"flower\" ]; then celery -A aggregator_backend.tasks flower --port=$PORT; fi"]
