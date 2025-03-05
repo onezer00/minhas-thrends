@@ -87,6 +87,21 @@ def check_database_connection():
                 database_url = database_url.replace("postgresql://", "postgresql+psycopg2://")
                 logger.info(f"URL ajustada para usar psycopg2: {database_url}")
             
+            # Corrige o nome do host para usar o FQDN do Render
+            if "dpg-" in database_url and ".render.com" not in database_url:
+                # Extrai componentes da URL
+                import re
+                match = re.match(r'postgresql(?:\+psycopg2)?://([^:]+):([^@]+)@([^:/]+)(?::(\d+))?/(.+)', database_url)
+                if match:
+                    user, password, host, port, dbname = match.groups()
+                    port = port or "5432"  # Porta padrão se não especificada
+                    
+                    # Adiciona o sufixo .oregon-postgres.render.com ao hostname
+                    if "dpg-" in host and ".render.com" not in host:
+                        new_host = f"{host}.oregon-postgres.render.com"
+                        database_url = f"postgresql+psycopg2://{user}:{password}@{new_host}:{port}/{dbname}"
+                        logger.info(f"URL ajustada para usar FQDN do Render: {database_url}")
+            
             # Substitui localhost pelo nome do serviço no Render se necessário
             if "@localhost" in database_url:
                 database_url = database_url.replace("@localhost", "@trendpulse-db.internal")
@@ -128,7 +143,14 @@ def check_database_connection():
                     "dpg-cv45o756l47c738c38c0-a",
                     "dpg-cv45o756l47c738c38c0-a.internal",
                     "dpg-cv45o756l47c738c38c0-a.oregon-postgres.render.com",
-                    "trendpulse.internal"
+                    "trendpulse.internal",
+                    # Adiciona mais variações com o FQDN do Render
+                    host + ".oregon-postgres.render.com",
+                    host.replace(".internal", "") + ".oregon-postgres.render.com",
+                    "dpg-cv45o756l47c738c38c0-a.oregon-postgres.render.com",
+                    # Tenta com o nome curto
+                    "postgres",
+                    "postgres.internal"
                 ]
                 
                 # Remove duplicatas
