@@ -71,10 +71,26 @@ def check_redis_connection():
         broker_url,
         broker_url.replace('redis://', 'redis://trendpulse-redis:6379/'),
         broker_url.replace('redis://', 'redis://trendpulse-redis.internal:6379/'),
+        broker_url.replace('redis://', 'redis://trendpulse-redis.onrender.com:6379/'),
         'redis://trendpulse-redis.internal:6379/0',
         'redis://trendpulse-redis:6379/0',
+        'redis://trendpulse-redis.onrender.com:6379/0',
         'redis://localhost:6379/0'
     ]
+    
+    # Adicionar URLs com o nome completo do serviço Redis no Render
+    redis_service_name = os.environ.get('REDIS_SERVICE_NAME', '')
+    if redis_service_name:
+        urls_to_try.insert(0, f'redis://{redis_service_name}:6379/0')
+        
+    # Extrair o nome do serviço Redis da URL atual, se possível
+    if 'redis://' in broker_url:
+        parts = broker_url.split('redis://')[1].split(':')
+        if len(parts) > 0 and parts[0]:
+            redis_host = parts[0]
+            if '.' not in redis_host and '-' in redis_host:
+                # Parece ser um nome de serviço Render, tente variações
+                urls_to_try.insert(0, f'redis://{redis_host}:6379/0')
     
     # Remover duplicatas
     urls_to_try = list(dict.fromkeys(urls_to_try))
@@ -93,12 +109,14 @@ def check_redis_connection():
                 os.environ['CELERY_BROKER_URL'] = url
                 os.environ['CELERY_RESULT_BACKEND'] = url
                 
-                # Atualizar também a configuração do Celery
-                from celery import current_app
-                current_app.conf.broker_url = url
-                current_app.conf.result_backend = url
-                
-                logger.info("Configuração do Celery atualizada com a nova URL do Redis")
+                # Tentar atualizar também a configuração do Celery se estiver disponível
+                try:
+                    from celery import current_app
+                    current_app.conf.broker_url = url
+                    current_app.conf.result_backend = url
+                    logger.info("Configuração do Celery atualizada com a nova URL do Redis")
+                except Exception as e:
+                    logger.warning(f"Não foi possível atualizar a configuração do Celery: {str(e)}")
             
             return True
         except Exception as e:
@@ -149,72 +167,72 @@ def setup_initial_tasks(sender, **kwargs):
 @celery.task
 def fetch_all_trends():
     """
-    Tarefa principal que busca tendências de todas as plataformas e as salva no banco.
-    Verifica a última atualização de cada plataforma antes de fazer novas requisições.
+    Tarefa principal que dispara a busca de tendências em todas as plataformas.
     """
+    # Verificar conexão com Redis antes de prosseguir
+    if not check_redis_connection():
+        logger.error("Não foi possível conectar ao Redis. Abortando tarefa fetch_all_trends.")
+        return {
+            "status": "error",
+            "mensagem": "Falha na conexão com Redis",
+            "atualizacoes": {}
+        }
+        
     try:
-        session = SessionLocal()
-        atualizacoes = {
-            "youtube": {"horas": 3, "executado": False, "mensagem": ""},
-            "reddit": {"horas": 2, "executado": False, "mensagem": ""},
-            "twitter": {"horas": 3, "executado": False, "mensagem": ""}
-        }
+        logger.info("Iniciando busca de tendências em todas as plataformas...")
         
-        # Verifica última atualização de cada plataforma
-        for plataforma, config in atualizacoes.items():
-            try:
-                ultima_trend = session.query(Trend).filter(
-                    Trend.platform == plataforma
-                ).order_by(Trend.created_at.desc()).first()
-                
-                # Se for YouTube, sempre atualiza
-                if plataforma == "youtube":
-                    fetch_youtube_trends.delay()
-                    config["executado"] = True
-                    config["mensagem"] = "Iniciada atualização do YouTube"
-                    continue
-                
-                # Para outras plataformas, verifica o tempo desde a última atualização
-                if ultima_trend:
-                    tempo_desde_atualizacao = datetime.utcnow() - ultima_trend.created_at
-                    if tempo_desde_atualizacao < timedelta(hours=config["horas"]):
-                        config["mensagem"] = f"Dados do {plataforma} ainda recentes (última atualização há {tempo_desde_atualizacao.seconds//3600} horas)"
-                        continue
-                
-                # Se chegou aqui, precisa atualizar
-                if plataforma == "reddit":
-                    fetch_reddit_trends.delay()
-                    config["executado"] = True
-                    config["mensagem"] = "Iniciada atualização do Reddit"
-                elif plataforma == "twitter":
-                    # fetch_twitter_trends.delay()  # Comentado conforme original
-                    config["mensagem"] = "Twitter temporariamente desativado"
-                
-            except Exception as e:
-                config["mensagem"] = f"Erro ao verificar {plataforma}: {str(e)}"
-                logger.error(f"Erro ao processar {plataforma}: {str(e)}")
+        # Dicionário para armazenar o status de cada atualização
+        atualizacoes = {}
         
-        session.close()
-        
-        # Prepara relatório de execução
-        relatorio = {
-            "status": "ok",
-            "atualizacoes": {
-                plat: {
-                    "executado": config["executado"],
-                    "mensagem": config["mensagem"]
-                } for plat, config in atualizacoes.items()
+        # YouTube
+        try:
+            fetch_youtube_trends.delay()
+            atualizacoes["youtube"] = {
+                "executado": True,
+                "mensagem": "Iniciada atualização do YouTube"
             }
+        except Exception as e:
+            logger.error(f"Erro ao iniciar busca do YouTube: {str(e)}")
+            atualizacoes["youtube"] = {
+                "executado": False,
+                "mensagem": f"Erro: {str(e)}"
+            }
+        
+        # Reddit
+        try:
+            fetch_reddit_trends.delay()
+            atualizacoes["reddit"] = {
+                "executado": True,
+                "mensagem": "Iniciada atualização do Reddit"
+            }
+        except Exception as e:
+            logger.error(f"Erro ao iniciar busca do Reddit: {str(e)}")
+            atualizacoes["reddit"] = {
+                "executado": False,
+                "mensagem": f"Erro: {str(e)}"
+            }
+        
+        # Twitter (desativado temporariamente)
+        atualizacoes["twitter"] = {
+            "executado": False,
+            "mensagem": "Twitter temporariamente desativado"
         }
         
-        logger.info(f"Relatório de atualizações: {json.dumps(relatorio, indent=2)}")
-        return relatorio
+        resultado = {
+            "status": "ok",
+            "atualizacoes": atualizacoes
+        }
+        
+        logger.info(f"Relatório de atualizações: {json.dumps(resultado, indent=2)}")
+        return resultado
         
     except Exception as e:
-        logger.error(f"Erro ao iniciar busca de tendências: {str(e)}")
-        if 'session' in locals():
-            session.close()
-        return {"status": "error", "message": str(e)}
+        logger.error(f"Erro ao executar fetch_all_trends: {str(e)}")
+        return {
+            "status": "error",
+            "mensagem": str(e),
+            "atualizacoes": {}
+        }
 
 
 # @celery.task
