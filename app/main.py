@@ -130,8 +130,22 @@ def trigger_fetch_trends():
     """
     Dispara manualmente a tarefa de busca de tendências.
     """
-    task = fetch_all_trends.delay()
-    return {"message": "Tarefa de busca de tendências iniciada", "task_id": task.id}
+    try:
+        # Verificar conexão com Redis antes de disparar a tarefa
+        from app.tasks import check_redis_connection
+        if not check_redis_connection():
+            return {
+                "status": "error", 
+                "message": "Não foi possível conectar ao Redis. Verifique a configuração."
+            }
+            
+        # Disparar a tarefa
+        from app.tasks import fetch_all_trends
+        task = fetch_all_trends.delay()
+        return {"message": "Tarefa de busca de tendências iniciada", "task_id": task.id}
+    except Exception as e:
+        logger.error(f"Erro ao disparar tarefa: {str(e)}")
+        return {"status": "error", "message": str(e)}
 
 
 @app.get("/api/status", tags=["Status"])
