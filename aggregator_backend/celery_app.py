@@ -30,15 +30,18 @@ celery.conf.update(
     accept_content=["json"],
     timezone="UTC",
     enable_utc=True,
+    # Aumentar o pool de conexões para o Redis
+    broker_pool_limit=20,  # Aumentado de 10
+    redis_max_connections=40,  # Aumentado de 20
     
-    # Configurações de retry para o broker (Redis)
+    # Configurações de retry mais robustas
     broker_transport_options={
         'retry_policy': {
-            'timeout': 5.0,
-            'max_retries': 3,
+            'timeout': 10.0,  # Aumentado de 5.0
+            'max_retries': 5,  # Aumentado de 3
             'interval_start': 0,
             'interval_step': 0.2,
-            'interval_max': 0.5,
+            'interval_max': 1.0,  # Aumentado de 0.5
         },
         'visibility_timeout': 43200,
     },

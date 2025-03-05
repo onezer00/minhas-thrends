@@ -68,31 +68,27 @@ def check_redis_connection():
     return False
 
 def check_database_connection():
-    """
-    Verifica a conexão com o banco de dados e imprime informações de diagnóstico.
-    """
-    # Obtém a URL do banco de dados da variável de ambiente
-    database_url = os.getenv("DATABASE_URL")
+    """Verifica a conexão com o banco de dados."""
+    import os
+    from sqlalchemy import create_engine
     
-    if not database_url:
-        logger.error("Variável DATABASE_URL não definida!")
-        return False
+    database_url = os.environ.get('DATABASE_URL')
+    logger.info(f"Verificando conexão com o banco de dados: {database_url}")
     
-    logger.info(f"Tentando conectar ao banco de dados: {database_url}")
+    # Se for uma URL MySQL, certifique-se de que está usando o driver pymysql
+    if database_url and database_url.startswith('mysql://'):
+        database_url = database_url.replace('mysql://', 'mysql+pymysql://')
+        logger.info(f"URL ajustada para usar pymysql: {database_url}")
     
-    # Tenta criar o engine e conectar
     try:
-        # Para MySQL, adiciona o driver pymysql se necessário
-        if "mysql://" in database_url and "pymysql" not in database_url:
-            database_url = database_url.replace("mysql://", "mysql+pymysql://")
-            logger.info(f"URL ajustada para usar pymysql: {database_url}")
-        
-        # Para MySQL no Render, substitui localhost pelo nome do serviço
-        if "mysql" in database_url and "@localhost" in database_url:
-            database_url = database_url.replace("@localhost", "@mysql")
-            logger.info(f"URL ajustada para ambiente Render (localhost -> mysql): {database_url}")
-        
         engine = create_engine(database_url)
+        connection = engine.connect()
+        connection.close()
+        logger.info("Conexão com o banco de dados bem-sucedida!")
+        return True
+    except Exception as e:
+        logger.error(f"Erro ao conectar ao banco de dados: {str(e)}")
+        return False
         
         # Tenta conectar e executar uma consulta simples
         with engine.connect() as connection:
@@ -182,4 +178,4 @@ if __name__ == "__main__":
         sys.exit(0)
     else:
         logger.error("Falha na verificação de conexões.")
-        sys.exit(1) 
+        sys.exit(1)
