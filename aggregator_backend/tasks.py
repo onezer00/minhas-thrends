@@ -10,6 +10,7 @@ from aggregator_backend.models import SessionLocal, Trend, TrendTag, AggregatedC
 from aggregator_backend.celery_app import celery
 from celery.signals import task_prerun
 from celery.schedules import crontab
+import redis
 
 # Configuração de logging
 logging.basicConfig(
@@ -48,29 +49,65 @@ celery.conf.beat_schedule = {
 # Função para verificar conexão com Redis
 def check_redis_connection():
     """
-    Verifica se a conexão com o Redis está funcionando.
-    Retorna True se conectado, False caso contrário.
+    Verifica a conexão com o Redis e tenta ajustar a URL se necessário.
     """
+    broker_url = os.getenv("CELERY_BROKER_URL")
+    if not broker_url:
+        logger.error("Variável CELERY_BROKER_URL não definida!")
+        return False
+    
+    logger.info(f"Verificando conexão com Redis: {broker_url}")
+    
+    # Tenta ajustar a URL se estiver usando 'redis' como hostname
+    if "redis://" in broker_url and "@redis:" in broker_url:
+        # No Render, pode ser necessário usar o nome do serviço completo
+        try:
+            # Tenta conectar com a URL original
+            redis_client = redis.Redis.from_url(broker_url)
+            redis_client.ping()
+            logger.info("Conexão com Redis estabelecida com sucesso!")
+            return True
+        except Exception as e:
+            logger.warning(f"Erro na conexão original: {str(e)}")
+            
+            # Tenta com o nome de serviço completo do Render
+            try:
+                new_url = broker_url.replace("@redis:", "@trendpulse-redis.internal:")
+                logger.info(f"Tentando URL alternativa: {new_url}")
+                redis_client = redis.Redis.from_url(new_url)
+                redis_client.ping()
+                logger.info("Conexão com Redis estabelecida com URL alternativa!")
+                
+                # Atualiza as variáveis de ambiente para o Celery
+                os.environ["CELERY_BROKER_URL"] = new_url
+                os.environ["CELERY_RESULT_BACKEND"] = new_url
+                
+                return True
+            except Exception as e2:
+                logger.error(f"Erro na conexão alternativa: {str(e2)}")
+                return False
+    
+    # Tenta conectar com a URL original
     try:
-        celery.backend.client.ping()
+        redis_client = redis.Redis.from_url(broker_url)
+        redis_client.ping()
+        logger.info("Conexão com Redis estabelecida com sucesso!")
         return True
     except Exception as e:
-        logger.error(f"Erro na conexão com Redis: {str(e)}")
+        logger.error(f"Erro ao conectar ao Redis: {str(e)}")
         return False
 
 # Hook para verificar conexão antes de cada task
 @task_prerun.connect
 def check_redis_before_task(task_id, task, *args, **kwargs):
     """
-    Verifica a conexão com Redis antes de executar qualquer task.
+    Verifica a conexão com o Redis antes de executar uma tarefa.
     """
-    if not check_redis_connection():
-        logger.error("Redis não está disponível. Tentando reconectar...")
-        try:
-            celery.backend.client.connection_pool.reset()
-        except Exception as e:
-            logger.error(f"Erro ao resetar pool de conexões: {str(e)}")
-            raise Exception("Redis indisponível e não foi possível reconectar")
+    try:
+        if not check_redis_connection():
+            logger.error("Não foi possível conectar ao Redis. A tarefa pode falhar.")
+    except Exception as e:
+        logger.error(f"Erro ao verificar conexão com Redis: {str(e)}")
 
 # Verifica se o banco de dados está vazio na inicialização
 @celery.on_after_configure.connect

@@ -270,6 +270,7 @@ Para fazer o deploy da aplicação no Render.com:
 
 4. O Render detectará automaticamente o arquivo `render.yaml` e criará todos os serviços necessários:
    - API FastAPI (Web Service)
+   - Flower Dashboard (Web Service)
    - Worker do Celery
    - Celery Beat
    - Redis
@@ -282,8 +283,26 @@ Para fazer o deploy da aplicação no Render.com:
    - `REDDIT_USERNAME`
    - `REDDIT_PASSWORD`
    - `GITHUB_PAGES_URL`
+   - `FLOWER_BASIC_AUTH` (opcional, formato: "usuario:senha")
 
 6. Clique em "Apply" para iniciar o deploy.
+
+### Acessando o Flower no Render
+
+O Flower estará disponível em uma URL separada fornecida pelo Render. Para acessá-lo:
+
+1. No dashboard do Render, localize o serviço `trendpulse-flower`
+2. Clique no serviço para ver os detalhes
+3. Use a URL fornecida pelo Render, que será algo como `https://trendpulse-flower.onrender.com/flower`
+4. Se você configurou a variável `FLOWER_BASIC_AUTH`, será solicitado um nome de usuário e senha
+
+O Flower no Render permite que você:
+- Monitore as tasks em execução
+- Veja o histórico de execuções
+- Cancele ou reinicie tasks
+- Visualize estatísticas de desempenho
+
+> **Nota**: O Flower no plano gratuito do Render também entrará em modo de "sleep" após 15 minutos de inatividade, assim como os outros serviços.
 
 ### Troubleshooting no Render
 
@@ -295,27 +314,38 @@ Se encontrar problemas durante o deploy no Render, verifique:
    - O script `check_db.py` tentará se conectar várias vezes e mostrará logs detalhados
    - O sistema agora tem fallback automático para SQLite em caso de falha na conexão
 
-2. **Erro de porta**:
+2. **Erro de conexão com o Redis**:
+   - Se encontrar erros como `'NoneType' object has no attribute 'push'` ou `Name or service not known`
+   - O sistema tentará automaticamente ajustar a URL do Redis para usar o nome completo do serviço no Render
+   - Você pode verificar a conexão manualmente com: `python -m aggregator_backend.check_db --skip-db`
+   - Se o problema persistir, reinicie o serviço Redis no dashboard do Render
+
+3. **Erro de porta**:
    - O Render exige que a aplicação use a porta definida na variável de ambiente `PORT`
    - Nosso `render.yaml` e `Procfile` já estão configurados para usar `--port $PORT`
 
-3. **Serviços não iniciam**:
+4. **Serviços não iniciam**:
    - Verifique os logs de cada serviço no dashboard do Render
    - Pode ser necessário reiniciar manualmente os serviços após o primeiro deploy
    - Tente usar o `Procfile` em vez do `render.yaml` se continuar tendo problemas
 
-4. **Problemas de CORS**:
+5. **Problemas de CORS**:
    - Verifique se a variável `GITHUB_PAGES_URL` está configurada corretamente
    - Em produção, apenas requisições desse domínio serão aceitas
 
-5. **Erro de permissão de arquivo**:
+6. **Erro de permissão de arquivo**:
    - Se o SQLite for usado como fallback, ele agora usará o diretório temporário do sistema
    - Isso resolve problemas de permissão em ambientes como o Render
 
-6. **Diagnóstico avançado**:
+7. **Diagnóstico avançado**:
    - Adicione a variável de ambiente `PYTHONUNBUFFERED=1` para ver logs em tempo real
    - Execute o script de diagnóstico com mais tentativas: `python -m aggregator_backend.check_db --max-attempts 10 --wait-time 15`
    - Verifique os logs do sistema para erros específicos
+
+8. **Problemas com Celery**:
+   - Se as tarefas não estiverem sendo executadas, verifique a conexão com o Redis
+   - O Celery precisa de uma conexão estável com o Redis para funcionar corretamente
+   - Você pode monitorar as tarefas através do Flower: `https://trendpulse-flower.onrender.com/flower`
 
 ### Observações Importantes
 
