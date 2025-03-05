@@ -19,23 +19,12 @@ logger = logging.getLogger(__name__)
 # Criar as tabelas no banco de dados, se ainda não existirem
 create_tables()
 
-# Configuração de CORS para permitir acesso apenas do GitHub Pages
-GITHUB_PAGES_URL = os.getenv("GITHUB_PAGES_URL", "https://<seu-usuario>.github.io")
-ALLOWED_ORIGINS = [
-    GITHUB_PAGES_URL,
-    # URLs para desenvolvimento local
-    "http://localhost:3000",
-    "http://localhost:5173",
-    "http://127.0.0.1:3000",
-    "http://127.0.0.1:5173",
-]
-
 # Configuração de ambiente
 ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
 IS_DEVELOPMENT = ENVIRONMENT.lower() == "development"
 
 # Configuração de CORS para permitir acesso apenas do GitHub Pages
-GITHUB_PAGES_URL = os.getenv("GITHUB_PAGES_URL", "https://<seu-usuario>.github.io")
+GITHUB_PAGES_URL = os.getenv("GITHUB_PAGES_URL", "https://seu-usuario.github.io")
 ALLOWED_ORIGINS = [
     GITHUB_PAGES_URL,
 ] if not IS_DEVELOPMENT else [
@@ -46,13 +35,16 @@ ALLOWED_ORIGINS = [
     "http://127.0.0.1:5173",
 ]
 
+logger.info(f"Ambiente: {ENVIRONMENT}")
+logger.info(f"CORS permitido para: {ALLOWED_ORIGINS}")
+
 app = FastAPI(
-    title="TrendPulse API",
-    description="API para consulta de tendências de redes sociais",
+    title="Aggregator Backend API",
+    description="API para agregar conteúdo de YouTube e Reddit",
     version="1.0.0"
 )
 
-# Configuração de CORS atualizada
+# Configuração de CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,

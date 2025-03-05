@@ -1,14 +1,31 @@
 import os
 import datetime
-from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime, ForeignKey, JSON
+from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime, JSON, ForeignKey, desc
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship
 
-# Configuração do banco de dados - preferindo MySQL conforme solicitado
-DATABASE_URL = os.getenv("DATABASE_URL", "mysql+pymysql://user:password@localhost/trendpulse")
+# Obtém a URL do banco de dados da variável de ambiente
+DATABASE_URL = os.getenv("DATABASE_URL")
 
-# Cria o engine do SQLAlchemy
-engine = create_engine(DATABASE_URL)
+# Verifica se a URL do banco de dados foi fornecida
+if not DATABASE_URL:
+    # Fallback para SQLite local (desenvolvimento)
+    DATABASE_URL = "sqlite:///data/aggregator.db"
+    print(f"Usando banco de dados SQLite local: {DATABASE_URL}")
+else:
+    print(f"Usando banco de dados configurado: {DATABASE_URL}")
+
+# Cria o engine. Para SQLite, o parâmetro check_same_thread deve ser False em ambientes multi-thread.
+if DATABASE_URL.startswith("sqlite"):
+    engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+else:
+    # Para MySQL/PostgreSQL no Render, pode ser necessário ajustar a URL
+    if "mysql" in DATABASE_URL and "@localhost" in DATABASE_URL:
+        # Substitui localhost pelo nome do serviço no Render
+        DATABASE_URL = DATABASE_URL.replace("@localhost", "@mysql")
+        print(f"URL ajustada para ambiente Render: {DATABASE_URL}")
+    
+    engine = create_engine(DATABASE_URL)
 
 # Cria a fábrica de sessões
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
