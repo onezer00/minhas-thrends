@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Depends, HTTPException, Query
+from fastapi import FastAPI, Depends, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from sqlalchemy import desc, text
@@ -24,17 +24,47 @@ create_tables()
 ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
 IS_DEVELOPMENT = ENVIRONMENT.lower() == "development"
 
+# Função para verificar e corrigir a URL do GitHub Pages
+def get_github_pages_url():
+    """
+    Obtém a URL do GitHub Pages e garante que esteja no formato correto.
+    """
+    url = os.getenv("GITHUB_PAGES_URL", "https://onezer00.github.io")
+    
+    # Garante que a URL não termina com barra
+    if url.endswith("/"):
+        url = url[:-1]
+    
+    logger.info(f"URL do GitHub Pages: {url}")
+    return url
+
 # Configuração de CORS para permitir acesso apenas do GitHub Pages
-GITHUB_PAGES_URL = os.getenv("GITHUB_PAGES_URL", "https://onezer00.github.io")
-ALLOWED_ORIGINS = [
+GITHUB_PAGES_URL = get_github_pages_url()
+
+# Lista de origens permitidas
+ALLOWED_ORIGINS = []
+
+# Adiciona variações do GitHub Pages
+github_variations = [
     GITHUB_PAGES_URL,
-] if not IS_DEVELOPMENT else [
-    # URLs para desenvolvimento local
-    "http://localhost:3000",
-    "http://localhost:5173",
-    "http://127.0.0.1:3000",
-    "http://127.0.0.1:5173",
+    "https://onezer00.github.io",
+    "http://onezer00.github.io",
 ]
+
+# Adiciona variações com o caminho do projeto
+for base in github_variations:
+    ALLOWED_ORIGINS.append(base)
+    ALLOWED_ORIGINS.append(f"{base}/minhas-trends-frontend")
+    ALLOWED_ORIGINS.append(f"{base}/minhas-trends-frontend/")
+
+# Em desenvolvimento, adiciona origens locais
+if IS_DEVELOPMENT:
+    ALLOWED_ORIGINS.extend([
+        "http://localhost:3000",
+        "http://localhost:5173",
+        "http://127.0.0.1:3000",
+        "http://127.0.0.1:5173",
+    ])
 
 logger.info(f"Ambiente: {ENVIRONMENT}")
 logger.info(f"CORS permitido para: {ALLOWED_ORIGINS}")
@@ -49,10 +79,68 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
+    allow_origin_regex=r"https://onezer00\.github\.io(\/.*)?",  # Permite qualquer caminho no domínio onezer00.github.io
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization", "Accept", "Origin", "X-Requested-With"],
+    expose_headers=["Content-Length", "Content-Type"],
+    max_age=86400,  # Cache por 24 horas
 )
+
+# Função para verificar se uma origem está permitida
+def is_origin_allowed(origin: str) -> bool:
+    """
+    Verifica se uma origem está na lista de origens permitidas.
+    Considera também casos em que a origem pode ser um subdomínio ou ter um caminho diferente.
+    """
+    if IS_DEVELOPMENT:
+        return True
+        
+    if not origin or origin == "No Origin":
+        return False
+        
+    # Verifica se a origem está exatamente na lista
+    if origin in ALLOWED_ORIGINS:
+        return True
+        
+    # Verifica se a origem é um subdomínio ou tem um caminho diferente
+    for allowed in ALLOWED_ORIGINS:
+        # Se a origem permitida termina com /, remove para comparação
+        if allowed.endswith("/"):
+            allowed = allowed[:-1]
+            
+        # Se a origem atual termina com /, remove para comparação
+        if origin.endswith("/"):
+            origin = origin[:-1]
+            
+        # Verifica se a origem atual começa com a origem permitida
+        if origin.startswith(allowed):
+            return True
+            
+    return False
+
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    """
+    Middleware para logar informações sobre as requisições recebidas,
+    especialmente útil para depurar problemas de CORS.
+    """
+    origin = request.headers.get("origin", "No Origin")
+    path = request.url.path
+    method = request.method
+    
+    logger.info(f"Requisição recebida: {method} {path} de {origin}")
+    
+    # Verifica se a origem está na lista de origens permitidas
+    if origin != "No Origin" and not is_origin_allowed(origin):
+        logger.warning(f"Origem não permitida: {origin}")
+    
+    response = await call_next(request)
+    
+    # Loga o status da resposta
+    logger.info(f"Resposta enviada: {response.status_code} para {method} {path}")
+    
+    return response
 
 # Rotas da API
 @app.get("/")
@@ -64,6 +152,22 @@ def read_root():
         "message": "Bem-vindo à API TrendPulse",
         "docs": "/docs",
         "status": "/api/status"
+    }
+
+@app.get("/api/cors-test")
+def cors_test(request: Request):
+    """
+    Rota para testar a configuração CORS.
+    """
+    origin = request.headers.get("origin", "No Origin")
+    is_allowed = is_origin_allowed(origin)
+    
+    return {
+        "message": "CORS está configurado corretamente!" if is_allowed else "Origem não permitida",
+        "origin": origin,
+        "is_allowed": is_allowed,
+        "allowed_origins": ALLOWED_ORIGINS,
+        "timestamp": datetime.now().isoformat()
     }
 
 @app.get("/api/trends")
@@ -200,6 +304,22 @@ async def status():
     status_code = 200 if status_ok else 200  # Mantém 200 mesmo com erro para o healthcheck do Render
     
     return response
+
+
+@app.get("/api/config")
+def get_config():
+    """
+    Retorna informações sobre a configuração da API.
+    """
+    return {
+        "environment": ENVIRONMENT,
+        "is_development": IS_DEVELOPMENT,
+        "github_pages_url": GITHUB_PAGES_URL,
+        "allowed_origins": ALLOWED_ORIGINS,
+        "cors_enabled": True,
+        "version": "1.0.0",
+        "timestamp": datetime.now().isoformat()
+    }
 
 
 if __name__ == "__main__":
