@@ -9,7 +9,7 @@ services:
     buildCommand: pip install -r requirements.txt
     startCommand: >
       bash -c "
-        echo 'Verificando conexão com o banco de dados...' &&
+        echo 'Verificando conexões com banco de dados e Redis...' &&
         python -m aggregator_backend.check_db --max-attempts 10 --wait-time 10 &&
         echo 'Criando tabelas do banco de dados...' &&
         python -c 'from aggregator_backend.models import create_tables; create_tables()' &&
@@ -50,6 +50,36 @@ services:
       - key: PYTHONUNBUFFERED
         value: "1"
 
+  # Flower Dashboard
+  - type: web
+    name: trendpulse-flower
+    env: docker
+    dockerfilePath: ./Dockerfile
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: >
+      bash -c "
+        echo 'Verificando conexão com o Redis...' &&
+        python -m aggregator_backend.check_db --max-attempts 10 --wait-time 10 --skip-db &&
+        echo 'Iniciando o Flower...' &&
+        celery -A aggregator_backend.tasks flower --port=$PORT --url_prefix=flower
+      "
+    envVars:
+      - key: CELERY_BROKER_URL
+        fromService:
+          name: trendpulse-redis
+          type: redis
+          property: connectionString
+      - key: CELERY_RESULT_BACKEND
+        fromService:
+          name: trendpulse-redis
+          type: redis
+          property: connectionString
+      - key: PYTHONUNBUFFERED
+        value: "1"
+      - key: FLOWER_BASIC_AUTH
+        sync: false
+        
   # Celery Worker
   - type: worker
     name: trendpulse-worker
@@ -59,7 +89,7 @@ services:
     buildCommand: pip install -r requirements.txt
     startCommand: >
       bash -c "
-        echo 'Verificando conexão com o banco de dados...' &&
+        echo 'Verificando conexões com banco de dados e Redis...' &&
         python -m aggregator_backend.check_db --max-attempts 10 --wait-time 10 &&
         echo 'Aguardando API iniciar...' &&
         sleep 30 &&
@@ -105,7 +135,7 @@ services:
     buildCommand: pip install -r requirements.txt
     startCommand: >
       bash -c "
-        echo 'Verificando conexão com o banco de dados...' &&
+        echo 'Verificando conexões com banco de dados e Redis...' &&
         python -m aggregator_backend.check_db --max-attempts 10 --wait-time 10 &&
         echo 'Aguardando worker iniciar...' &&
         sleep 45 &&
