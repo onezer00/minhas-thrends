@@ -27,8 +27,10 @@ def check_redis_connection():
         broker_url,
         broker_url.replace('redis://', 'redis://trendpulse-redis:6379/'),
         broker_url.replace('redis://', 'redis://trendpulse-redis.internal:6379/'),
+        broker_url.replace('redis://', 'redis://trendpulse-redis.onrender.com:6379/'),
         'redis://trendpulse-redis.internal:6379/0',
         'redis://trendpulse-redis:6379/0',
+        'redis://trendpulse-redis.onrender.com:6379/0',
         'redis://localhost:6379/0'
     ]
     
