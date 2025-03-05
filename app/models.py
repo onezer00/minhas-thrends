@@ -14,6 +14,7 @@ logger = logging.getLogger(__name__)
 
 # Obtém a URL do banco de dados da variável de ambiente
 DATABASE_URL = os.getenv("DATABASE_URL")
+ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
 
 # Verifica se a URL do banco de dados foi fornecida
 if not DATABASE_URL:
@@ -27,20 +28,35 @@ if not DATABASE_URL:
 else:
     logger.info(f"Usando banco de dados configurado: {DATABASE_URL}")
     
-    # Para MySQL/PostgreSQL no Render, pode ser necessário ajustar a URL
-    if "mysql" in DATABASE_URL:
-        # Verifica se precisamos adicionar o driver pymysql
-        if "pymysql" not in DATABASE_URL and "mysql://" in DATABASE_URL:
-            DATABASE_URL = DATABASE_URL.replace("mysql://", "mysql+pymysql://")
-            logger.info(f"URL ajustada para usar pymysql: {DATABASE_URL}")
+    # Detecta o ambiente e ajusta a URL conforme necessário
+    if ENVIRONMENT == "production":
+        logger.info("Ambiente de produção detectado, verificando configuração para PostgreSQL")
         
-        # Substitui localhost pelo nome do serviço no Render se necessário
-        if "@localhost" in DATABASE_URL:
-            DATABASE_URL = DATABASE_URL.replace("@localhost", "@trendpulse-db.internal")
-            logger.info(f"URL ajustada para ambiente Render (localhost -> trendpulse-db.internal): {DATABASE_URL}")
-        elif "@mysql" in DATABASE_URL:
-            DATABASE_URL = DATABASE_URL.replace("@mysql", "@trendpulse-db.internal")
-            logger.info(f"URL ajustada para ambiente Render (mysql -> trendpulse-db.internal): {DATABASE_URL}")
+        # Para PostgreSQL no Render
+        if "postgres" in DATABASE_URL:
+            # Verifica se precisamos adicionar o driver psycopg2
+            if "postgresql://" in DATABASE_URL and "psycopg2" not in DATABASE_URL:
+                DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+psycopg2://")
+                logger.info(f"URL ajustada para usar psycopg2: {DATABASE_URL}")
+            
+            # Substitui localhost pelo nome do serviço no Render se necessário
+            if "@localhost" in DATABASE_URL:
+                DATABASE_URL = DATABASE_URL.replace("@localhost", "@trendpulse-db.internal")
+                logger.info(f"URL ajustada para ambiente Render (localhost -> trendpulse-db.internal): {DATABASE_URL}")
+    else:
+        logger.info("Ambiente de desenvolvimento detectado, verificando configuração para MySQL")
+        
+        # Para MySQL em desenvolvimento
+        if "mysql" in DATABASE_URL:
+            # Verifica se precisamos adicionar o driver pymysql
+            if "pymysql" not in DATABASE_URL and "mysql://" in DATABASE_URL:
+                DATABASE_URL = DATABASE_URL.replace("mysql://", "mysql+pymysql://")
+                logger.info(f"URL ajustada para usar pymysql: {DATABASE_URL}")
+            
+            # Substitui localhost pelo nome do serviço no Docker Compose se necessário
+            if "@localhost" in DATABASE_URL:
+                DATABASE_URL = DATABASE_URL.replace("@localhost", "@mysql")
+                logger.info(f"URL ajustada para ambiente Docker (localhost -> mysql): {DATABASE_URL}")
 
 # Tenta criar o engine com tratamento de erro
 try:
