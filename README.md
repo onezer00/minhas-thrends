@@ -305,19 +305,31 @@ Para fazer o deploy da aplicação no Render.com:
 
 1. Crie uma conta no [Render.com](https://render.com) e conecte seu repositório do GitHub.
 
-2. No Dashboard do Render, clique em "New" e selecione "Blueprint".
+2. **Crie um banco de dados PostgreSQL**:
+   - No Dashboard do Render, clique em "New" e selecione "PostgreSQL"
+   - Configure o banco de dados:
+     - Nome: `trendpulse`
+     - Database: deixe em branco para gerar automaticamente
+     - User: deixe em branco para gerar automaticamente
+     - Região: escolha a mais próxima de você
+     - Versão: 15 ou 16
+     - Plano: Free
+   - Clique em "Create Database"
+   - **Importante**: Anote a string de conexão fornecida após a criação
 
-3. Selecione o repositório onde está o código da aplicação.
+3. No Dashboard do Render, clique em "New" e selecione "Blueprint".
 
-4. O Render detectará automaticamente o arquivo `render.yaml` e criará todos os serviços necessários:
+4. Selecione o repositório onde está o código da aplicação.
+
+5. O Render detectará automaticamente o arquivo `render.yaml` e criará os seguintes serviços:
    - API FastAPI (Web Service)
    - Flower Dashboard (Web Service)
    - Worker do Celery
    - Celery Beat
    - Redis
-   - PostgreSQL Database
 
-5. Configure as variáveis de ambiente secretas:
+6. Configure as variáveis de ambiente secretas em cada serviço:
+   - `DATABASE_URL`: Cole a string de conexão do PostgreSQL que você anotou
    - `YOUTUBE_API_KEY`
    - `REDDIT_CLIENT_ID`
    - `REDDIT_SECRET`
@@ -327,15 +339,15 @@ Para fazer o deploy da aplicação no Render.com:
    - `FLOWER_BASIC_AUTH` (opcional, formato: "usuario:senha")
    - `ENVIRONMENT=production` (importante para usar PostgreSQL)
 
-6. Clique em "Apply" para iniciar o deploy.
+7. Clique em "Apply" para iniciar o deploy.
 
 ### Banco de Dados no Render
 
 O projeto está configurado para usar PostgreSQL em produção no Render:
 
-1. O arquivo `render.yaml` define um serviço PostgreSQL com o nome `trendpulse-db`
+1. Você precisa criar o banco de dados PostgreSQL manualmente antes de criar os outros serviços
 2. O sistema detecta automaticamente o ambiente de produção e configura o driver psycopg2
-3. A string de conexão é fornecida automaticamente pelo Render
+3. A string de conexão deve ser configurada manualmente em cada serviço
 4. Em caso de falha, o sistema tem um fallback para SQLite
 
 ### Acessando o Flower no Render
