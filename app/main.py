@@ -25,7 +25,7 @@ ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
 IS_DEVELOPMENT = ENVIRONMENT.lower() == "development"
 
 # Configuração de CORS para permitir acesso apenas do GitHub Pages
-GITHUB_PAGES_URL = os.getenv("GITHUB_PAGES_URL", "https://seu-usuario.github.io")
+GITHUB_PAGES_URL = os.getenv("GITHUB_PAGES_URL", "https://onezer00.github.io")
 ALLOWED_ORIGINS = [
     GITHUB_PAGES_URL,
 ] if not IS_DEVELOPMENT else [

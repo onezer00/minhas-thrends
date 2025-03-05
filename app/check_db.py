@@ -106,12 +106,41 @@ def check_database_connection():
                 logger.info(f"URL ajustada para ambiente Docker (localhost -> mysql): {database_url}")
     
     # Lista de URLs para tentar
-    urls_to_try = [database_url]
+    urls_to_try = [database_url] if database_url else []
     
     # Adiciona URLs alternativas com base no ambiente
     if environment == 'production':
         # Adiciona URLs alternativas para PostgreSQL no Render
         if database_url and "postgres" in database_url:
+            # Extrai componentes da URL para tentar diferentes combinações
+            import re
+            match = re.match(r'postgresql(?:\+psycopg2)?://([^:]+):([^@]+)@([^:/]+)(?::(\d+))?/(.+)', database_url)
+            if match:
+                user, password, host, port, dbname = match.groups()
+                port = port or "5432"  # Porta padrão se não especificada
+                logger.info(f"Componentes da URL extraídos: user={user}, host={host}, port={port}, dbname={dbname}")
+                
+                # Adiciona variações do hostname
+                hostnames = [
+                    host,
+                    host.replace(".internal", ""),
+                    host + ".internal",
+                    "dpg-cv45o756l47c738c38c0-a",
+                    "dpg-cv45o756l47c738c38c0-a.internal",
+                    "dpg-cv45o756l47c738c38c0-a.oregon-postgres.render.com",
+                    "trendpulse.internal"
+                ]
+                
+                # Remove duplicatas
+                hostnames = list(dict.fromkeys(hostnames))
+                
+                # Gera URLs alternativas com diferentes hostnames
+                for hostname in hostnames:
+                    alt_url = f"postgresql+psycopg2://{user}:{password}@{hostname}:{port}/{dbname}"
+                    if alt_url != database_url and alt_url not in urls_to_try:
+                        urls_to_try.append(alt_url)
+            
+            # Adiciona URLs alternativas genéricas
             urls_to_try.extend([
                 database_url.replace("@localhost", "@trendpulse-db.internal") if "@localhost" in database_url else None,
                 database_url.replace("@postgres", "@trendpulse-db.internal") if "@postgres" in database_url else None,
@@ -126,14 +155,27 @@ def check_database_connection():
                 "mysql+pymysql://root:root@localhost:3307/trendpulse",
             ])
     
+    # Adiciona fallback para SQLite
+    import tempfile
+    temp_dir = tempfile.gettempdir()
+    db_path = os.path.join(temp_dir, "trendpulse.db")
+    urls_to_try.append(f"sqlite:///{db_path}")
+    
     # Remover None e duplicatas
     urls_to_try = [url for url in urls_to_try if url]
     urls_to_try = list(dict.fromkeys(urls_to_try))
     
+    logger.info(f"Tentando conectar com as seguintes URLs: {urls_to_try}")
+    
     for url in urls_to_try:
         try:
             logger.info(f"Tentando conectar ao banco de dados com URL: {url}")
-            engine = create_engine(url)
+            
+            # Para SQLite, o parâmetro check_same_thread deve ser False em ambientes multi-thread
+            if url.startswith("sqlite"):
+                engine = create_engine(url, connect_args={"check_same_thread": False})
+            else:
+                engine = create_engine(url)
             
             # Tenta conectar e executar uma consulta simples
             with engine.connect() as connection:
