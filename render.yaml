@@ -8,10 +8,7 @@ services:
     healthCheckPath: /api/status
     envVars:
       - key: DATABASE_URL
-        fromService:
-          name: trendpulse-db
-          type: postgres
-          property: connectionString
+        sync: false
       - key: CELERY_BROKER_URL
         fromService:
           name: trendpulse-redis
@@ -73,10 +70,7 @@ services:
     plan: free
     envVars:
       - key: DATABASE_URL
-        fromService:
-          name: trendpulse-db
-          type: postgres
-          property: connectionString
+        sync: false
       - key: CELERY_BROKER_URL
         fromService:
           name: trendpulse-redis
@@ -110,10 +104,7 @@ services:
     plan: free
     envVars:
       - key: DATABASE_URL
-        fromService:
-          name: trendpulse-db
-          type: postgres
-          property: connectionString
+        sync: false
       - key: CELERY_BROKER_URL
         fromService:
           name: trendpulse-redis
@@ -135,10 +126,3 @@ services:
     plan: free
     maxmemoryPolicy: allkeys-lru
     ipAllowList: []
-
-  # PostgreSQL Database
-  - type: postgres
-    name: trendpulse-db
-    plan: free
-    ipAllowList: []
-    postgresMajorVersion: 15
