@@ -1,17 +1,26 @@
-FROM python:3.10-slim
+FROM python:3.9-slim
 
-# Define o diretório de trabalho
 WORKDIR /app
 
-# Copia o arquivo de dependências e instala-as
+# Instala dependências do sistema
+RUN apt-get update && apt-get install -y \
+    gcc \
+    default-libmysqlclient-dev \
+    pkg-config \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copia requirements primeiro para aproveitar o cache de camadas do Docker
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Cria um diretório para armazenar o banco de dados (SQLite) ou outros dados persistentes
-RUN mkdir -p /app/data
+# Copia o restante do código
+COPY . .
 
-# Copia o código-fonte da aplicação
-COPY aggregator_backend ./aggregator_backend
+# Configura as variáveis de ambiente padrão
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONPATH=/app
 
-# Comando padrão (este comando pode ser sobrescrito no docker-compose para rodar worker, beat ou flower)
-CMD ["uvicorn", "aggregator_backend.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# O comando será fornecido no docker-compose.yml
+CMD ["uvicorn", "aggregator_backend.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]

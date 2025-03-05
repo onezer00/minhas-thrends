@@ -1,14 +1,14 @@
-# Minhas Thrends Documentation
+# TrendPulse - Agregador de Tendências
 
-O **Minhas Thrends** é um projeto que agrega conteúdo de diversas plataformas (Twitter, YouTube e Reddit) e o disponibiliza por meio de uma API RESTful. A aplicação utiliza:
+O **TrendPulse** é um projeto que agrega conteúdo de diversas plataformas (YouTube e Reddit) e o disponibiliza por meio de uma API RESTful. A aplicação utiliza:
 
-- **FastAPI** para criar a API.
-- **Celery** para processamento assíncrono e agendamento (usando Celery Beat).
-- **Redis** como broker para o Celery.
-- **SQLite** para persistência dos dados (com possibilidade de migração para PostgreSQL).
-- **Flower** para monitoramento das tasks do Celery.
+- **FastAPI** para criar a API
+- **Celery** para processamento assíncrono e agendamento (usando Celery Beat)
+- **Redis** como broker para o Celery
+- **MySQL** para persistência dos dados
+- **Flower** para monitoramento das tasks do Celery
 
-Este projeto foi estruturado para rodar os serviços de background (Worker, Beat, Flower e Redis) via Docker, enquanto a API pode ser executada localmente para facilitar o debug.
+Este projeto foi estruturado para rodar todos os serviços via Docker Compose, garantindo um ambiente isolado e fácil de configurar.
 
 ## Índice
 
@@ -16,14 +16,12 @@ Este projeto foi estruturado para rodar os serviços de background (Worker, Beat
 - [Pré-requisitos](#pré-requisitos)
 - [Instalação e Configuração](#instalação-e-configuração)
   - [Clonando o Repositório](#clonando-o-repositório)
-  - [Ambiente Virtual e Dependências](#ambiente-virtual-e-dependências)
   - [Configuração das Variáveis de Ambiente](#configuração-das-variáveis-de-ambiente)
 - [Estrutura do Projeto](#estrutura-do-projeto)
 - [Executando a Aplicação](#executando-a-aplicação)
   - [Modo Desenvolvimento](#modo-desenvolvimento)
   - [Modo Produção](#modo-produção)
 - [API Endpoints](#api-endpoints)
-- [Agendamento de Tarefas com Celery](#agendamento-de-tarefas-com-celery)
 - [Monitoramento com Flower](#monitoramento-com-flower)
 - [Troubleshooting](#troubleshooting)
 - [Contribuições](#contribuições)
@@ -32,52 +30,38 @@ Este projeto foi estruturado para rodar os serviços de background (Worker, Beat
 
 ## Recursos e Funcionalidades
 
-- **Agregação de Conteúdo:** Busca dados de trending topics de Twitter, YouTube e Reddit.
-- **Persistência:** Armazena os resultados em um banco de dados.
+- **Agregação de Conteúdo:** Busca dados de tendências do YouTube e Reddit
+- **Persistência:** Armazena os resultados em um banco MySQL
 - **Agendamento:** Atualiza os dados periodicamente usando Celery Beat:
-  - **Twitter:** Atualiza a cada 8 horas.
-  - **YouTube e Reddit:** Atualizam a cada 1 hora.
-- **API REST:** Disponibiliza um endpoint para consulta dos dados agregados.
-- **Monitoramento:** Utiliza Flower para acompanhar as tasks do Celery.
+  - **YouTube:** Atualiza a cada 3 horas
+  - **Reddit:** Atualiza a cada 2 horas
+- **API REST:** Disponibiliza endpoints para consulta dos dados agregados
+- **Monitoramento:** Utiliza Flower para acompanhar as tasks do Celery
+- **Categorização:** Classifica automaticamente as tendências em categorias
+- **Deduplicação:** Evita duplicatas usando identificadores únicos por plataforma
+- **URLs Diretas:** Armazena e disponibiliza URLs diretas para as tendências
 
 ## Pré-requisitos
 
-- Python 3.10+
-- Docker e Docker Compose (para serviços de background)
-- Redis (incluso via Docker)
-- Contas e chaves de API para Twitter, YouTube e Reddit.
+- Docker e Docker Compose
+- Chaves de API para:
+  - YouTube Data API v3
+  - Reddit (Client ID e Secret)
 
 ## Instalação e Configuração
 
 ### Clonando o Repositório
 
 ```bash
-git clone https://github.com/<username>/aggregator-backend.git
-cd aggregator-backend
+git clone https://github.com/<username>/trendpulse.git
+cd trendpulse
 ```
-## Ambiente Virtual e Dependências
-Crie e ative um ambiente virtual:
 
-```bash
-python -m venv venv
-source venv/bin/activate   # No Windows: venv\Scripts\activate
-```
-Instale as dependências:
-
-```bash
-pip install -r requirements.txt
-```
 ### Configuração das Variáveis de Ambiente
-Crie um arquivo ``.env`` na raiz do projeto com as seguintes variáveis (ajuste conforme necessário):
+
+Crie um arquivo `.env` na raiz do projeto com as seguintes variáveis:
 
 ```dotenv
-# Broker e Backend para o Celery
-BROKER_URL=redis://localhost:6379/0
-BACKEND_URL=redis://localhost:6379/0
-
-# Credenciais da API do Twitter
-TWITTER_BEARER=your_twitter_bearer_token
-
 # Credenciais da API do YouTube
 YOUTUBE_API_KEY=your_youtube_api_key
 
@@ -95,26 +79,24 @@ ENVIRONMENT=development
 
 # URL do GitHub Pages (produção)
 GITHUB_PAGES_URL=https://seu-usuario.github.io
-
 ```
 
 ## Estrutura do Projeto
+
 ```bash
-aggregator-backend/
+trendpulse/
 ├── aggregator_backend/
 │   ├── __init__.py
-│   ├── main.py               # Entrypoint da API FastAPI
-│   ├── celery_app.py         # Configuração do Celery e agendamento das tasks
-│   ├── tasks.py              # Definição das tasks para buscar dados
-│   ├── models.py             # Modelos e configuração do banco de dados
-│   └── config.py             # Carrega configurações e variáveis de ambiente
-├── requirements.txt          # Dependências do Python
-├── Dockerfile                # Definição da imagem Docker
-├── docker-compose.yml        # Configuração dos serviços via Docker Compose
-├── .gitignore                # Arquivo para ignorar arquivos indesejados no Git
-└── README.md                 # Documentação deste projeto
-
+│   ├── main.py               # API FastAPI
+│   ├── celery_app.py         # Configuração do Celery
+│   ├── tasks.py              # Tasks de busca de dados
+│   └── models.py             # Modelos do banco de dados
+├── requirements.txt
+├── Dockerfile
+├── docker-compose.yml
+└── README.md
 ```
+
 ## Executando a Aplicação
 
 Existem dois modos de execução: desenvolvimento e produção.
@@ -190,48 +172,143 @@ GITHUB_PAGES_URL=https://seu-usuario.github.io
 ```
 
 ## API Endpoints
-### GET ``/trends``
-Retorna os registros de conteúdo agregado, permitindo filtrar por plataforma e keyword.
 
-**Exemplo de requisição**:
+### GET `/api/trends`
 
-```bash
-curl "http://localhost:8000/trends?keyword=python"
-curl "http://localhost:8000/trends?platform=youtube"
-```
-**Exemplo de resposta**:
+Retorna as tendências com opções de filtro.
 
+**Parâmetros:**
+- `platform`: Filtrar por plataforma (youtube, reddit)
+- `category`: Filtrar por categoria
+- `limit`: Número máximo de resultados (padrão: 1000)
+- `skip`: Número de resultados a pular (paginação)
+
+**Exemplo de resposta:**
 ```json
 [
   {
     "id": 1,
+    "title": "Título da Tendência",
+    "description": "Descrição detalhada",
     "platform": "youtube",
-    "keyword": "python",
-    "title": "Learn Python in 10 Minutes (for Beginners)",
-    "content": { "snippet": { ... } },
-    "created_at": "2025-02-28T13:02:18.941411"
-  },
-  ...
+    "category": "tecnologia",
+    "author": "Canal Tech",
+    "views": "1.5M",
+    "likes": 150000,
+    "comments": 5000,
+    "timeAgo": "2 horas",
+    "tags": ["tech", "tutorial"],
+    "thumbnail": "https://...",
+    "url": "https://youtube.com/watch?v=..."
+  }
 ]
 ```
-## Agendamento de Tarefas com Celery
-O arquivo ``celery_app.py`` configura o Celery e define o agendamento das tasks:
 
-- Twitter: A task ``fetch_twitter_data`` é executada a cada 8 horas.
-- YouTube e Reddit: Suas tasks são executadas a cada 1 hora.
+### POST `/api/fetch-trends`
+
+Dispara manualmente a busca de tendências.
+
+### GET `/api/categories`
+
+Lista todas as categorias disponíveis e quantidade de tendências em cada uma.
+
+### GET `/api/platforms`
+
+Lista todas as plataformas disponíveis e quantidade de tendências em cada uma.
+
+### GET `/api/status`
+
+Retorna estatísticas gerais do sistema.
+
 ## Monitoramento com Flower
-Flower é usado para monitorar as tasks do Celery. Após iniciar os serviços com Docker Compose, acesse a interface de Flower em http://localhost:5555.
+
+Acesse o dashboard do Flower em `http://localhost:5555` para monitorar:
+- Tasks em execução
+- Tasks agendadas
+- Histórico de execuções
+- Estado dos workers
 
 ## Troubleshooting
-- **Rate Limits**: Se receber um erro 429 (Too Many Requests), verifique os cabeçalhos da resposta da API e ajuste a frequência das chamadas.
-- **Banco de Dados**: Assegure que os contêineres compartilhem o mesmo volume para o SQLite ou considere usar um banco de dados centralizado como o PostgreSQL.
-- **Variáveis de Ambiente**: Certifique-se de que todas as variáveis de ambiente estão corretamente definidas no arquivo ``.env`` e passadas aos contêineres.
-- **Debug**: Para depurar as tasks, considere chamar as funções diretamente fora do contexto do Celery para facilitar o uso de breakpoints.
-## Contribuições
-Contribuições são bem-vindas! Se você encontrar bugs ou tiver sugestões de melhorias, por favor, abra uma issue ou envie um pull request.
 
-## Licença
-Este projeto é licenciado sob a MIT License. Consulte o arquivo [LICENSE](LICENSE) para mais detalhes.
+### Problemas Comuns
+
+1. **Erro de Conexão com MySQL:**
+   - Verifique se o container do MySQL está rodando: `docker-compose ps`
+   - Verifique os logs: `docker-compose logs mysql`
+
+2. **Tasks Não Executando:**
+   - Verifique os logs do worker: `docker-compose logs worker`
+   - Verifique se o Redis está acessível: `docker-compose logs redis`
+
+3. **Erros de API:**
+   - Verifique se as credenciais no `.env` estão corretas
+   - Verifique os limites de quota das APIs
+
+4. **Limpeza Total:**
+   Para reiniciar do zero:
+   ```bash
+   docker-compose down -v
+   docker-compose up -d
+   ```
+
+## Deploy no Render.com
+
+O projeto está configurado para deploy gratuito no Render.com. Siga os passos:
+
+1. Crie uma conta no [Render.com](https://render.com)
+
+2. Conecte seu repositório GitHub ao Render
+
+3. Configure as variáveis de ambiente no Render:
+   ```
+   YOUTUBE_API_KEY=sua_chave_api_youtube
+   REDDIT_CLIENT_ID=seu_client_id_reddit
+   REDDIT_SECRET=seu_secret_reddit
+   REDDIT_USERNAME=seu_usuario_reddit
+   REDDIT_PASSWORD=sua_senha_reddit
+   GITHUB_PAGES_URL=https://seu-usuario.github.io
+   ```
+
+4. Clique em "Deploy" e aguarde a conclusão
+
+O Render irá automaticamente:
+- Criar um banco MySQL gratuito
+- Configurar um Redis gratuito
+- Iniciar os serviços da API, Worker e Beat
+- Configurar as URLs e variáveis de ambiente
+
+### URLs do Serviço
+
+Após o deploy, você terá acesso às seguintes URLs:
+- API: `https://trendpulse-api.onrender.com`
+- Flower Dashboard: `https://trendpulse-api.onrender.com/flower`
+
+### Limitações do Plano Gratuito
+
+- Banco MySQL: 
+  - 256 MB de armazenamento
+  - Backup automático diário
+  - Conexões limitadas
+
+- Redis:
+  - 25 MB de memória
+  - Sem persistência
+  - Conexões limitadas
+
+- Serviços:
+  - Spin down após 15 minutos de inatividade
+  - 512 MB de RAM por serviço
+  - Banda limitada
+
+### Configuração do Frontend
+
+No seu projeto frontend (GitHub Pages), configure a URL da API:
+
+```javascript
+const API_URL = process.env.NODE_ENV === 'production'
+  ? 'https://trendpulse-api.onrender.com'
+  : 'http://localhost:8000';
+```
 
 ## Deploy no Render.com
 

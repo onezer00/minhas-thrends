@@ -1,6 +1,7 @@
 version: '3.8'
+
 services:
-  # API FastAPI (novo serviço)
+  # API FastAPI
   api:
     build: .
     container_name: trendpulse_api
@@ -25,7 +26,7 @@ services:
       redis:
         condition: service_healthy
     profiles:
-      - production  # Perfil para produção
+      - production
     command: uvicorn aggregator_backend.main:app --host 0.0.0.0 --port 8000
 
   # MySQL
@@ -78,7 +79,7 @@ services:
         cd /app && python -c 'from aggregator_backend.models import create_tables; create_tables()'
       "
     environment:
-      - DATABASE_URL=mysql+pymysql://trendpulse:trendpulse@mysql/trendpulse
+      - DATABASE_URL=mysql+pymysql://root:root@mysql:3306/trendpulse
     volumes:
       - .:/app
     depends_on:
