@@ -10,6 +10,12 @@ RUN apt-get update && apt-get install -y \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
+# Cria um usuário não-root
+RUN useradd -ms /bin/sh appuser
+
+# Muda para o novo usuário
+USER appuser
+
 # Copia requirements primeiro para aproveitar o cache de camadas do Docker
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
