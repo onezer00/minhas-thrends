@@ -6,7 +6,7 @@ from typing import List, Optional
 from datetime import datetime
 import logging
 import os
-from app.models import get_db, Trend, create_tables
+from app.models import get_db, Trend, create_tables, SessionLocal
 from app.tasks import fetch_all_trends
 from app.check_db import check_redis_connection
 
@@ -144,20 +144,33 @@ async def status():
     
     # Verificar conexão com o banco de dados
     db_ok = True
+    db_error = None
     try:
         db = SessionLocal()
         db.execute("SELECT 1")
         db.close()
     except Exception as e:
         db_ok = False
+        db_error = str(e)
         logger.error(f"Erro ao verificar banco de dados: {str(e)}")
     
-    return {
-        "status": "ok" if redis_ok and db_ok else "error",
+    status_ok = redis_ok and db_ok
+    
+    response = {
+        "status": "ok" if status_ok else "error",
         "redis": "connected" if redis_ok else "disconnected",
         "database": "connected" if db_ok else "disconnected",
         "timestamp": datetime.utcnow().isoformat()
     }
+    
+    # Adiciona detalhes do erro se houver
+    if db_error:
+        response["database_error"] = db_error
+    
+    # Define o código de status HTTP com base no status
+    status_code = 200 if status_ok else 200  # Mantém 200 mesmo com erro para o healthcheck do Render
+    
+    return response
 
 
 if __name__ == "__main__":
