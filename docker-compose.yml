@@ -133,11 +133,16 @@ services:
   flower:
     build: .
     container_name: trendpulse_flower
-    command: celery -A app.tasks flower --port=5555
+    command: celery -A app.tasks flower --port=5555 --db=/tmp/flower
     ports:
       - "5555:5555"
     volumes:
       - .:/app
+    environment:
+      - DATABASE_URL=mysql+pymysql://root:root@mysql:3306/trendpulse
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - FLOWER_DB=/tmp/flower
     depends_on:
       redis:
         condition: service_healthy

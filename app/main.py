@@ -3,9 +3,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from sqlalchemy import desc, text
 from typing import List, Optional
-from datetime import datetime
+from datetime import datetime, timedelta
 import logging
 import os
+import time
 from app.models import get_db, Trend, create_tables, SessionLocal
 from app.tasks import fetch_all_trends
 from app.check_db import check_redis_connection
@@ -267,13 +268,60 @@ def trigger_fetch_trends():
         return {"status": "error", "message": str(e)}
 
 
+# Cache para o endpoint de status
+status_cache = {
+    "last_check": None,
+    "status": None,
+    "redis": None,
+    "database": None,
+    "timestamp": None,
+    "db_error": None,
+    "redis_error": None
+}
+STATUS_CACHE_TTL = 60  # Tempo de vida do cache em segundos
+
 @app.get("/api/status", tags=["Status"])
-async def status():
+async def status(force_check: bool = Query(False, description="Força uma nova verificação ignorando o cache")):
     """
     Endpoint para verificar o status da API e suas dependências.
     Usado pelo Render.com para healthcheck.
+    
+    Por padrão, usa um cache de 60 segundos para reduzir a carga no Redis e banco de dados.
+    Use o parâmetro force_check=true para forçar uma nova verificação.
     """
-    redis_ok = check_redis_connection()
+    global status_cache
+    
+    # Verifica se o cache é válido
+    current_time = datetime.utcnow()
+    cache_valid = (
+        status_cache["last_check"] is not None and
+        (current_time - status_cache["last_check"]).total_seconds() < STATUS_CACHE_TTL
+    )
+    
+    # Se o cache for válido e não estamos forçando uma verificação, retorna o cache
+    if cache_valid and not force_check:
+        return {
+            "status": status_cache["status"],
+            "redis": status_cache["redis"],
+            "database": status_cache["database"],
+            "timestamp": status_cache["timestamp"],
+            "cached": True,
+            "cache_age": int((current_time - status_cache["last_check"]).total_seconds()),
+            "cache_ttl": STATUS_CACHE_TTL,
+            **({"db_error": status_cache["db_error"]} if status_cache["db_error"] else {}),
+            **({"redis_error": status_cache["redis_error"]} if status_cache["redis_error"] else {})
+        }
+    
+    # Caso contrário, faz uma nova verificação
+    redis_ok = True
+    redis_error = None
+    
+    try:
+        redis_ok = check_redis_connection(verbose=False)
+    except Exception as e:
+        redis_ok = False
+        redis_error = str(e)
+        logger.error(f"Erro ao verificar Redis: {str(e)}")
     
     # Verificar conexão com o banco de dados
     db_ok = True
@@ -289,19 +337,31 @@ async def status():
     
     status_ok = redis_ok and db_ok
     
-    response = {
+    # Atualiza o cache
+    status_cache = {
+        "last_check": current_time,
         "status": "ok" if status_ok else "error",
         "redis": "connected" if redis_ok else "disconnected",
         "database": "connected" if db_ok else "disconnected",
-        "timestamp": datetime.utcnow().isoformat()
+        "timestamp": current_time.isoformat(),
+        "db_error": db_error,
+        "redis_error": redis_error
+    }
+    
+    response = {
+        "status": status_cache["status"],
+        "redis": status_cache["redis"],
+        "database": status_cache["database"],
+        "timestamp": status_cache["timestamp"],
+        "cached": False
     }
     
     # Adiciona detalhes do erro se houver
     if db_error:
-        response["database_error"] = db_error
+        response["db_error"] = db_error
     
-    # Define o código de status HTTP com base no status
-    status_code = 200 if status_ok else 200  # Mantém 200 mesmo com erro para o healthcheck do Render
+    if redis_error:
+        response["redis_error"] = redis_error
     
     return response
 

@@ -6,6 +6,8 @@ services:
     dockerfilePath: ./Dockerfile
     plan: starter
     healthCheckPath: /api/status
+    healthCheckTimeout: 30
+    healthCheckInterval: 60
     envVars:
       - key: DATABASE_URL
         sync: false
