@@ -62,7 +62,7 @@ services:
         echo 'Verificando conexão com o Redis...' &&
         python -m aggregator_backend.check_db --max-attempts 10 --wait-time 10 --skip-db &&
         echo 'Iniciando o Flower...' &&
-        celery -A aggregator_backend.tasks flower --port=$PORT --url_prefix=flower
+        celery -A aggregator_backend.tasks flower --port=$PORT
       "
     envVars:
       - key: CELERY_BROKER_URL

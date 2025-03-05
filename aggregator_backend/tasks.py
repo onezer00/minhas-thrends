@@ -48,66 +48,66 @@ celery.conf.beat_schedule = {
 
 # Função para verificar conexão com Redis
 def check_redis_connection():
-    """
-    Verifica a conexão com o Redis e tenta ajustar a URL se necessário.
-    """
-    broker_url = os.getenv("CELERY_BROKER_URL")
-    if not broker_url:
-        logger.error("Variável CELERY_BROKER_URL não definida!")
-        return False
+    """Verifica a conexão com o Redis e tenta ajustar a URL se necessário."""
+    import redis
+    import os
+    import time
     
-    logger.info(f"Verificando conexão com Redis: {broker_url}")
+    broker_url = os.environ.get('CELERY_BROKER_URL', 'redis://localhost:6379/0')
+    logger.info(f"Tentando conectar ao Redis usando: {broker_url}")
     
-    # Tenta ajustar a URL se estiver usando 'redis' como hostname
-    if "redis://" in broker_url and "@redis:" in broker_url:
-        # No Render, pode ser necessário usar o nome do serviço completo
+    # Lista de possíveis URLs para tentar
+    urls_to_try = [
+        broker_url,
+        broker_url.replace('redis://', 'redis://trendpulse-redis:6379/'),
+        broker_url.replace('redis://', 'redis://trendpulse-redis.internal:6379/'),
+        'redis://trendpulse-redis.internal:6379/0',
+        'redis://trendpulse-redis:6379/0',
+        'redis://localhost:6379/0'
+    ]
+    
+    # Remover duplicatas
+    urls_to_try = list(dict.fromkeys(urls_to_try))
+    
+    # Tentar cada URL
+    for url in urls_to_try:
         try:
-            # Tenta conectar com a URL original
-            redis_client = redis.Redis.from_url(broker_url)
-            redis_client.ping()
-            logger.info("Conexão com Redis estabelecida com sucesso!")
+            logger.info(f"Tentando conectar ao Redis com URL: {url}")
+            client = redis.Redis.from_url(url)
+            ping_result = client.ping()
+            logger.info(f"Conexão com Redis bem-sucedida usando {url}! Ping: {ping_result}")
+            
+            # Se a URL for diferente da original, atualizar as variáveis de ambiente
+            if url != broker_url:
+                logger.info(f"Atualizando variáveis de ambiente para usar a URL do Redis: {url}")
+                os.environ['CELERY_BROKER_URL'] = url
+                os.environ['CELERY_RESULT_BACKEND'] = url
+                
+                # Atualizar também a configuração do Celery
+                from celery import current_app
+                current_app.conf.broker_url = url
+                current_app.conf.result_backend = url
+                
+                logger.info("Configuração do Celery atualizada com a nova URL do Redis")
+            
             return True
         except Exception as e:
-            logger.warning(f"Erro na conexão original: {str(e)}")
-            
-            # Tenta com o nome de serviço completo do Render
-            try:
-                new_url = broker_url.replace("@redis:", "@trendpulse-redis.internal:")
-                logger.info(f"Tentando URL alternativa: {new_url}")
-                redis_client = redis.Redis.from_url(new_url)
-                redis_client.ping()
-                logger.info("Conexão com Redis estabelecida com URL alternativa!")
-                
-                # Atualiza as variáveis de ambiente para o Celery
-                os.environ["CELERY_BROKER_URL"] = new_url
-                os.environ["CELERY_RESULT_BACKEND"] = new_url
-                
-                return True
-            except Exception as e2:
-                logger.error(f"Erro na conexão alternativa: {str(e2)}")
-                return False
+            logger.warning(f"Falha ao conectar ao Redis usando {url}: {str(e)}")
     
-    # Tenta conectar com a URL original
-    try:
-        redis_client = redis.Redis.from_url(broker_url)
-        redis_client.ping()
-        logger.info("Conexão com Redis estabelecida com sucesso!")
-        return True
-    except Exception as e:
-        logger.error(f"Erro ao conectar ao Redis: {str(e)}")
-        return False
+    logger.error("Não foi possível conectar ao Redis usando nenhuma das URLs tentadas")
+    return False
 
 # Hook para verificar conexão antes de cada task
 @task_prerun.connect
 def check_redis_before_task(task_id, task, *args, **kwargs):
-    """
-    Verifica a conexão com o Redis antes de executar uma tarefa.
-    """
+    """Verifica a conexão com o Redis antes de executar uma task."""
     try:
-        if not check_redis_connection():
-            logger.error("Não foi possível conectar ao Redis. A tarefa pode falhar.")
+        logger.debug(f"Verificando conexão com Redis antes de executar task {task.name}")
+        check_redis_connection()
     except Exception as e:
         logger.error(f"Erro ao verificar conexão com Redis: {str(e)}")
+        # Não levantamos a exceção para permitir que a task continue
+        # mesmo se a verificação falhar
 
 # Verifica se o banco de dados está vazio na inicialização
 @celery.on_after_configure.connect
