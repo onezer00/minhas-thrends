@@ -143,4 +143,13 @@ services:
   - type: pserv
     name: trendpulse-db
     env: docker
-    plan: free
+    plan: starter
+    disk:
+      name: data
+      mountPath: /var/lib/mysql
+      sizeGB: 1
+    envVars:
+      - key: MYSQL_ROOT_PASSWORD
+        generateValue: true
+      - key: MYSQL_DATABASE
+        value: trendpulse
