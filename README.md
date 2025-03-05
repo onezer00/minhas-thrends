@@ -235,6 +235,7 @@ Acesse o dashboard do Flower em `http://localhost:5555` para monitorar:
 1. **Erro de Conexão com MySQL:**
    - Verifique se o container do MySQL está rodando: `docker-compose ps`
    - Verifique os logs: `docker-compose logs mysql`
+   - Execute o script de diagnóstico: `python -m aggregator_backend.check_db`
 
 2. **Tasks Não Executando:**
    - Verifique os logs do worker: `docker-compose logs worker`
@@ -250,6 +251,12 @@ Acesse o dashboard do Flower em `http://localhost:5555` para monitorar:
    docker-compose down -v
    docker-compose up -d
    ```
+
+5. **Problemas com o Banco de Dados:**
+   - O sistema agora tem um fallback automático para SQLite em caso de falha na conexão com MySQL
+   - Em desenvolvimento, ele usará um arquivo SQLite no diretório temporário
+   - Em último caso, usará SQLite em memória (os dados serão perdidos ao reiniciar)
+   - Para diagnosticar problemas de conexão: `python -m aggregator_backend.check_db --max-attempts 5 --wait-time 10`
 
 ## Deploy no Render.com
 
@@ -286,18 +293,29 @@ Se encontrar problemas durante o deploy no Render, verifique:
    - Verifique se o serviço MySQL está em execução no dashboard do Render
    - Verifique se a string de conexão está correta (deve usar `mysql+pymysql://`)
    - O script `check_db.py` tentará se conectar várias vezes e mostrará logs detalhados
+   - O sistema agora tem fallback automático para SQLite em caso de falha na conexão
 
 2. **Erro de porta**:
    - O Render exige que a aplicação use a porta definida na variável de ambiente `PORT`
-   - Nosso `render.yaml` já está configurado para usar `--port $PORT`
+   - Nosso `render.yaml` e `Procfile` já estão configurados para usar `--port $PORT`
 
 3. **Serviços não iniciam**:
    - Verifique os logs de cada serviço no dashboard do Render
    - Pode ser necessário reiniciar manualmente os serviços após o primeiro deploy
+   - Tente usar o `Procfile` em vez do `render.yaml` se continuar tendo problemas
 
 4. **Problemas de CORS**:
    - Verifique se a variável `GITHUB_PAGES_URL` está configurada corretamente
    - Em produção, apenas requisições desse domínio serão aceitas
+
+5. **Erro de permissão de arquivo**:
+   - Se o SQLite for usado como fallback, ele agora usará o diretório temporário do sistema
+   - Isso resolve problemas de permissão em ambientes como o Render
+
+6. **Diagnóstico avançado**:
+   - Adicione a variável de ambiente `PYTHONUNBUFFERED=1` para ver logs em tempo real
+   - Execute o script de diagnóstico com mais tentativas: `python -m aggregator_backend.check_db --max-attempts 10 --wait-time 15`
+   - Verifique os logs do sistema para erros específicos
 
 ### Observações Importantes
 

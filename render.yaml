@@ -5,12 +5,14 @@ services:
     env: docker
     dockerfilePath: ./Dockerfile
     plan: free
-    healthCheckPath: /
+    healthCheckPath: /api/status
     buildCommand: pip install -r requirements.txt
     startCommand: >
       bash -c "
         echo 'Verificando conexão com o banco de dados...' &&
-        python -m aggregator_backend.check_db &&
+        python -m aggregator_backend.check_db --max-attempts 10 --wait-time 10 &&
+        echo 'Criando tabelas do banco de dados...' &&
+        python -c 'from aggregator_backend.models import create_tables; create_tables()' &&
         echo 'Iniciando a API...' &&
         uvicorn aggregator_backend.main:app --host 0.0.0.0 --port $PORT
       "
@@ -45,6 +47,8 @@ services:
         sync: false
       - key: REDDIT_PASSWORD
         sync: false
+      - key: PYTHONUNBUFFERED
+        value: "1"
 
   # Celery Worker
   - type: worker
@@ -56,7 +60,9 @@ services:
     startCommand: >
       bash -c "
         echo 'Verificando conexão com o banco de dados...' &&
-        python -m aggregator_backend.check_db &&
+        python -m aggregator_backend.check_db --max-attempts 10 --wait-time 10 &&
+        echo 'Aguardando API iniciar...' &&
+        sleep 30 &&
         echo 'Iniciando o worker...' &&
         celery -A aggregator_backend.tasks worker --loglevel=info
       "
@@ -87,6 +93,8 @@ services:
         sync: false
       - key: REDDIT_PASSWORD
         sync: false
+      - key: PYTHONUNBUFFERED
+        value: "1"
 
   # Celery Beat
   - type: worker
@@ -98,7 +106,9 @@ services:
     startCommand: >
       bash -c "
         echo 'Verificando conexão com o banco de dados...' &&
-        python -m aggregator_backend.check_db &&
+        python -m aggregator_backend.check_db --max-attempts 10 --wait-time 10 &&
+        echo 'Aguardando worker iniciar...' &&
+        sleep 45 &&
         echo 'Iniciando o beat...' &&
         celery -A aggregator_backend.tasks beat --loglevel=info
       "
@@ -119,6 +129,8 @@ services:
           name: trendpulse-redis
           type: redis
           property: connectionString
+      - key: PYTHONUNBUFFERED
+        value: "1"
 
   # Redis
   - type: redis

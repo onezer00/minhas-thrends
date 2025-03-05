@@ -1,31 +1,74 @@
 import os
 import datetime
+import logging
 from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime, JSON, ForeignKey, desc
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship
+
+# Configuração de logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+)
+logger = logging.getLogger(__name__)
 
 # Obtém a URL do banco de dados da variável de ambiente
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 # Verifica se a URL do banco de dados foi fornecida
 if not DATABASE_URL:
-    # Fallback para SQLite local (desenvolvimento)
-    DATABASE_URL = "sqlite:///data/aggregator.db"
-    print(f"Usando banco de dados SQLite local: {DATABASE_URL}")
+    # Fallback para SQLite em um diretório temporário (funciona no Render)
+    import tempfile
+    temp_dir = tempfile.gettempdir()
+    db_path = os.path.join(temp_dir, "trendpulse.db")
+    DATABASE_URL = f"sqlite:///{db_path}"
+    logger.warning(f"DATABASE_URL não configurada! Usando SQLite temporário: {DATABASE_URL}")
+    logger.warning(f"Diretório temporário: {temp_dir} (deve ter permissões de escrita)")
 else:
-    print(f"Usando banco de dados configurado: {DATABASE_URL}")
-
-# Cria o engine. Para SQLite, o parâmetro check_same_thread deve ser False em ambientes multi-thread.
-if DATABASE_URL.startswith("sqlite"):
-    engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
-else:
-    # Para MySQL/PostgreSQL no Render, pode ser necessário ajustar a URL
-    if "mysql" in DATABASE_URL and "@localhost" in DATABASE_URL:
-        # Substitui localhost pelo nome do serviço no Render
-        DATABASE_URL = DATABASE_URL.replace("@localhost", "@mysql")
-        print(f"URL ajustada para ambiente Render: {DATABASE_URL}")
+    logger.info(f"Usando banco de dados configurado: {DATABASE_URL}")
     
+    # Para MySQL/PostgreSQL no Render, pode ser necessário ajustar a URL
+    if "mysql" in DATABASE_URL:
+        # Verifica se precisamos adicionar o driver pymysql
+        if "pymysql" not in DATABASE_URL and "mysql://" in DATABASE_URL:
+            DATABASE_URL = DATABASE_URL.replace("mysql://", "mysql+pymysql://")
+            logger.info(f"URL ajustada para usar pymysql: {DATABASE_URL}")
+        
+        # Substitui localhost pelo nome do serviço no Render se necessário
+        if "@localhost" in DATABASE_URL:
+            DATABASE_URL = DATABASE_URL.replace("@localhost", "@mysql")
+            logger.info(f"URL ajustada para ambiente Render (localhost -> mysql): {DATABASE_URL}")
+
+# Tenta criar o engine com tratamento de erro
+try:
+    # Para SQLite, o parâmetro check_same_thread deve ser False em ambientes multi-thread
+    if DATABASE_URL.startswith("sqlite"):
+        logger.info(f"Criando engine SQLite com check_same_thread=False")
+        engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+    else:
+        logger.info(f"Criando engine para {DATABASE_URL.split('://')[0]}")
+        engine = create_engine(DATABASE_URL)
+    
+    # Testa a conexão
+    with engine.connect() as conn:
+        logger.info(f"Conexão com o banco de dados estabelecida com sucesso!")
+        
+        # Tenta obter a versão do banco
+        try:
+            version = conn.execute("SELECT VERSION()").scalar()
+            logger.info(f"Versão do banco de dados: {version}")
+        except Exception as e:
+            logger.warning(f"Não foi possível obter a versão do banco: {str(e)}")
+            
+except Exception as e:
+    logger.error(f"Erro ao conectar ao banco de dados: {str(e)}")
+    logger.error(f"URL do banco: {DATABASE_URL}")
+    
+    # Em caso de falha, tenta um fallback mais simples para SQLite em memória
+    logger.warning("Tentando fallback para SQLite em memória...")
+    DATABASE_URL = "sqlite:///:memory:"
     engine = create_engine(DATABASE_URL)
+    logger.info("Usando SQLite em memória como último recurso")
 
 # Cria a fábrica de sessões
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
