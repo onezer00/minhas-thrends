@@ -4,7 +4,7 @@ services:
     name: trendpulse-api
     env: docker
     dockerfilePath: ./Dockerfile
-    plan: free
+    plan: starter
     healthCheckPath: /api/status
     envVars:
       - key: DATABASE_URL
@@ -23,51 +23,17 @@ services:
         value: production
       - key: GITHUB_PAGES_URL
         sync: false
-      - key: YOUTUBE_API_KEY
-        sync: false
-      - key: REDDIT_CLIENT_ID
-        sync: false
-      - key: REDDIT_SECRET
-        sync: false
-      - key: REDDIT_USERNAME
-        sync: false
-      - key: REDDIT_PASSWORD
-        sync: false
       - key: PYTHONUNBUFFERED
         value: "1"
       - key: SERVICE
         value: api
 
-  # Flower Dashboard
-  - type: web
-    name: trendpulse-flower
-    env: docker
-    dockerfilePath: ./Dockerfile
-    plan: free
-    envVars:
-      - key: CELERY_BROKER_URL
-        fromService:
-          name: trendpulse-redis
-          type: redis
-          property: connectionString
-      - key: CELERY_RESULT_BACKEND
-        fromService:
-          name: trendpulse-redis
-          type: redis
-          property: connectionString
-      - key: PYTHONUNBUFFERED
-        value: "1"
-      - key: FLOWER_BASIC_AUTH
-        sync: false
-      - key: SERVICE
-        value: flower
-        
   # Celery Worker
   - type: worker
     name: trendpulse-worker
     env: docker
     dockerfilePath: ./Dockerfile
-    plan: free
+    plan: starter
     envVars:
       - key: DATABASE_URL
         sync: false
@@ -101,7 +67,7 @@ services:
     name: trendpulse-beat
     env: docker
     dockerfilePath: ./Dockerfile
-    plan: free
+    plan: starter
     envVars:
       - key: DATABASE_URL
         sync: false
@@ -120,9 +86,35 @@ services:
       - key: SERVICE
         value: beat
 
+  # Flower Dashboard
+  - type: web
+    name: trendpulse-flower
+    env: docker
+    dockerfilePath: ./Dockerfile
+    plan: starter
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: CELERY_BROKER_URL
+        fromService:
+          name: trendpulse-redis
+          type: redis
+          property: connectionString
+      - key: CELERY_RESULT_BACKEND
+        fromService:
+          name: trendpulse-redis
+          type: redis
+          property: connectionString
+      - key: PYTHONUNBUFFERED
+        value: "1"
+      - key: FLOWER_BASIC_AUTH
+        sync: false
+      - key: SERVICE
+        value: flower
+
   # Redis
   - type: redis
     name: trendpulse-redis
-    plan: free
+    plan: starter
     maxmemoryPolicy: allkeys-lru
     ipAllowList: []
