@@ -653,3 +653,196 @@ Algumas áreas onde você pode contribuir:
 - Implementar testes automatizados
 
 Agradecemos sua contribuição para tornar o TrendPulse ainda melhor! 
+
+## Gerenciamento de Espaço do Banco de Dados
+
+O TrendPulse implementa uma estratégia de retenção de dados para evitar que o banco de dados atinja seu limite de armazenamento, especialmente importante no ambiente de produção onde o PostgreSQL no plano Starter do Render tem um limite de 1GB.
+
+### Estratégia de Retenção de Dados
+
+A aplicação utiliza uma tarefa agendada (`clean_old_trends`) que é executada semanalmente para:
+
+1. **Remover tendências antigas**: Tendências com mais de 60 dias são automaticamente removidas
+2. **Limitar o número de registros por plataforma**: Mantém apenas os 5.000 registros mais recentes de cada plataforma
+3. **Recuperar espaço físico**: Executa o comando `VACUUM FULL` para liberar espaço no banco de dados
+
+### Configuração da Limpeza
+
+A tarefa de limpeza é configurada no arquivo `app/tasks.py`:
+
+```python
+app.conf.beat_schedule.update({
+    'clean-old-trends-weekly': {
+        'task': 'app.tasks.clean_old_trends',
+        'schedule': crontab(day_of_week='sunday', hour=2, minute=0),  # Todo domingo às 2h da manhã
+        'kwargs': {'max_days': 60, 'max_records': 5000},
+    },
+})
+```
+
+Você pode ajustar os parâmetros conforme necessário:
+
+- `max_days`: Número máximo de dias para manter as tendências (padrão: 60)
+- `max_records`: Número máximo de registros a manter por plataforma (padrão: 5000)
+
+### Monitoramento de Uso do Banco de Dados
+
+Para monitorar o uso de espaço do banco de dados:
+
+#### Usando o Endpoint de Estatísticas
+
+O TrendPulse agora inclui um endpoint específico para monitorar o uso do banco de dados:
+
+```bash
+curl http://localhost:8000/api/database/stats
+```
+
+Este endpoint retorna informações detalhadas como:
+- Tamanho total do banco de dados
+- Tamanho de cada tabela
+- Número total de tendências
+- Contagem de tendências por plataforma
+- Informações sobre a tendência mais antiga e mais recente
+
+Exemplo de resposta:
+```json
+{
+  "environment": "development",
+  "database_type": "mysql",
+  "database_size": {
+    "formatted": "45.25 MB",
+    "bytes": 47448064
+  },
+  "tables": {
+    "trends": {
+      "size": "42.75 MB",
+      "bytes": 44826624
+    },
+    "trend_tags": {
+      "size": "2.50 MB",
+      "bytes": 2621440
+    }
+  },
+  "total_trends": 8542,
+  "trends_by_platform": {
+    "youtube": 3256,
+    "reddit": 5286
+  },
+  "oldest_trend": {
+    "id": 1,
+    "title": "Primeira tendência",
+    "platform": "youtube",
+    "created_at": "2023-01-15T12:30:45.123456"
+  },
+  "newest_trend": {
+    "id": 8542,
+    "title": "Tendência mais recente",
+    "platform": "reddit",
+    "created_at": "2023-03-20T18:45:12.654321"
+  }
+}
+```
+
+Este endpoint é útil para:
+- Monitorar o crescimento do banco de dados
+- Identificar quando a limpeza de dados é necessária
+- Planejar estratégias de retenção de dados
+
+#### Em Desenvolvimento (MySQL)
+
+```bash
+# Verificar tamanho das tabelas
+docker exec -it trendpulse_mysql mysql -u root -proot -e "
+SELECT 
+    table_name AS 'Tabela',
+    ROUND(((data_length + index_length) / 1024 / 1024), 2) AS 'Tamanho (MB)'
+FROM information_schema.TABLES
+WHERE table_schema = 'trendpulse'
+ORDER BY (data_length + index_length) DESC;
+"
+```
+
+#### Em Produção (PostgreSQL no Render)
+
+No dashboard do Render:
+1. Acesse o serviço de banco de dados PostgreSQL
+2. Vá para a aba "Metrics"
+3. Verifique o gráfico "Disk Usage"
+
+Ou execute uma consulta SQL:
+
+```sql
+SELECT
+    pg_size_pretty(pg_database_size(current_database())) as db_size,
+    pg_size_pretty(pg_total_relation_size('trends')) as trends_size;
+```
+
+### Execução Manual da Limpeza
+
+Se necessário, você pode executar a limpeza manualmente:
+
+#### Usando o Endpoint de Limpeza
+
+O TrendPulse agora inclui um endpoint para executar a limpeza do banco de dados manualmente:
+
+```bash
+# Limpeza com parâmetros padrão (60 dias, 5000 registros por plataforma)
+curl -X POST http://localhost:8000/api/database/cleanup
+
+# Limpeza com parâmetros personalizados
+curl -X POST "http://localhost:8000/api/database/cleanup?max_days=30&max_records=1000"
+```
+
+Este endpoint inicia a limpeza em segundo plano e retorna imediatamente:
+
+```json
+{
+  "status": "started",
+  "message": "A limpeza do banco de dados foi iniciada em segundo plano",
+  "parameters": {
+    "max_days": 30,
+    "max_records": 1000
+  }
+}
+```
+
+Você pode verificar o progresso da limpeza nos logs do worker:
+
+```bash
+docker logs -f trendpulse_worker
+```
+
+#### Usando o CLI
+
+Você também pode executar a limpeza diretamente via linha de comando:
+
+```bash
+# Em desenvolvimento
+docker-compose exec worker python -c "from app.tasks import clean_old_trends; clean_old_trends(max_days=30, max_records=1000)"
+
+# Em produção (Render)
+# Use o console do serviço worker no dashboard do Render
+```
+
+### Backup Antes da Limpeza
+
+É recomendável fazer um backup antes de executar limpezas manuais:
+
+```bash
+# MySQL (desenvolvimento)
+docker exec trendpulse_mysql sh -c 'exec mysqldump -u root -proot trendpulse' > backup_antes_limpeza.sql
+
+# PostgreSQL (produção)
+# Use a funcionalidade de backup do Render no dashboard
+```
+
+### Considerações para Escala
+
+Se o volume de dados continuar crescendo além do limite de 1GB:
+
+1. **Upgrade do Plano**: Considere fazer upgrade para um plano com mais armazenamento
+2. **Arquivamento de Dados**: Implemente uma estratégia de arquivamento para dados históricos
+3. **Otimização de Esquema**: Revise o esquema do banco para otimizar o armazenamento
+4. **Compressão de Dados**: Considere comprimir campos de texto longos
+
+Esta estratégia de retenção de dados garante que o TrendPulse continue funcionando sem interrupções, mesmo com o crescimento contínuo dos dados. 

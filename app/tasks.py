@@ -5,7 +5,7 @@ import requests
 import requests.auth
 from datetime import datetime, timedelta
 import logging
-from sqlalchemy import func
+from sqlalchemy import func, desc
 from app.models import SessionLocal, Trend, TrendTag, AggregatedContent
 from app.celery_app import celery
 from celery.signals import task_prerun, task_postrun
@@ -55,6 +55,11 @@ celery.conf.beat_schedule = {
     "clean-old-trends-daily": {
         "task": "app.tasks.clean_old_trends",
         "schedule": crontab(minute=0, hour=3),  # 3 AM
+    },
+    'clean-old-trends-weekly': {
+        'task': 'app.tasks.clean_old_trends',
+        'schedule': crontab(day_of_week='sunday', hour=2, minute=0),  # Todo domingo às 2h da manhã
+        'kwargs': {'max_days': 60, 'max_records': 5000},
     },
 }
 
@@ -567,39 +572,89 @@ def get_reddit_thumbnail(post):
     return ""
 
 @celery.task
-def clean_old_trends():
+def clean_old_trends(max_days=30, max_records=10000):
     """
-    Remove tendências antigas para manter o banco de dados limpo.
-    Mantém apenas os últimos 7 dias de tendências.
+    Remove tendências antigas do banco de dados para evitar que ele fique cheio.
+    
+    Args:
+        max_days: Número máximo de dias para manter as tendências (padrão: 30)
+        max_records: Número máximo de registros a manter por plataforma (padrão: 10000)
+    
+    Returns:
+        dict: Estatísticas sobre a limpeza realizada
     """
-    logger.info("Iniciando limpeza de tendências antigas")
+    logger.info(f"Iniciando limpeza de tendências antigas (max_days={max_days}, max_records={max_records})")
+    
+    session = SessionLocal()
+    stats = {"removed": 0, "kept": 0, "by_platform": {}}
     
     try:
-        db = SessionLocal()
-        try:
-            # Define o limite de tempo (30 dias)
-            limit_date = datetime.now() - timedelta(days=30)
-            
-            # Conta quantas tendências serão removidas
-            count = db.query(func.count(Trend.id)).filter(Trend.created_at < limit_date).scalar()
-            
-            if count > 0:
-                # Remove tendências antigas
-                db.query(Trend).filter(Trend.created_at < limit_date).delete()
-                db.commit()
-                logger.info(f"Limpeza concluída. {count} tendências antigas removidas.")
-            else:
-                logger.info("Nenhuma tendência antiga para remover.")
-            
-            return {"status": "success", "count": count}
+        # 1. Remover tendências mais antigas que max_days
+        cutoff_date = datetime.utcnow() - timedelta(days=max_days)
+        old_trends = session.query(Trend).filter(Trend.created_at < cutoff_date)
+        count = old_trends.count()
         
-        finally:
-            db.close()
-            gc.collect()
+        if count > 0:
+            logger.info(f"Removendo {count} tendências mais antigas que {max_days} dias")
+            old_trends.delete(synchronize_session=False)
+            stats["removed"] += count
+        
+        # 2. Para cada plataforma, manter apenas os max_records registros mais recentes
+        platforms = session.query(Trend.platform).distinct().all()
+        
+        for (platform,) in platforms:
+            stats["by_platform"][platform] = {"removed": 0, "kept": 0}
+            
+            # Contar registros para esta plataforma
+            total_count = session.query(func.count(Trend.id)).filter(Trend.platform == platform).scalar()
+            
+            if total_count > max_records:
+                # Identificar IDs a manter (os mais recentes)
+                recent_ids = [
+                    id for (id,) in session.query(Trend.id)
+                    .filter(Trend.platform == platform)
+                    .order_by(desc(Trend.created_at))
+                    .limit(max_records)
+                    .all()
+                ]
+                
+                # Remover os que não estão na lista de IDs recentes
+                to_remove = total_count - max_records
+                if to_remove > 0:
+                    session.query(Trend).filter(
+                        Trend.platform == platform,
+                        ~Trend.id.in_(recent_ids)
+                    ).delete(synchronize_session=False)
+                    
+                    logger.info(f"Plataforma {platform}: Mantendo {max_records} registros mais recentes, removendo {to_remove}")
+                    stats["by_platform"][platform]["removed"] = to_remove
+                    stats["by_platform"][platform]["kept"] = max_records
+                    stats["removed"] += to_remove
+                    stats["kept"] += max_records
+            else:
+                stats["by_platform"][platform]["kept"] = total_count
+                stats["kept"] += total_count
+                logger.info(f"Plataforma {platform}: {total_count} registros (abaixo do limite de {max_records})")
+        
+        # Commit das alterações
+        session.commit()
+        
+        # 3. Executar VACUUM para recuperar espaço
+        try:
+            session.execute("VACUUM FULL")
+            logger.info("VACUUM FULL executado com sucesso")
+        except Exception as e:
+            logger.warning(f"Não foi possível executar VACUUM FULL: {e}")
+        
+        logger.info(f"Limpeza concluída: {stats['removed']} registros removidos, {stats['kept']} mantidos")
+        return stats
     
     except Exception as e:
-        logger.error(f"Erro ao limpar tendências antigas: {str(e)}")
-        return {"error": str(e)}
+        session.rollback()
+        logger.error(f"Erro durante a limpeza de tendências antigas: {e}")
+        raise
+    finally:
+        session.close()
 
 def extract_hashtags(text):
     """
