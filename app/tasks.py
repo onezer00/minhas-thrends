@@ -57,12 +57,26 @@ celery.conf.beat_schedule = {
     },
 }
 
+# Função para obter variáveis de ambiente com log
+def get_env_var(var_name, default=''):
+    """Obtém uma variável de ambiente com log para depuração"""
+    value = os.getenv(var_name, default)
+    if not value and var_name not in ['REDDIT_PASSWORD', 'REDDIT_SECRET', 'YOUTUBE_API_KEY']:
+        logger.warning(f"Variável de ambiente {var_name} não está configurada")
+    elif value:
+        # Não loga valores de variáveis sensíveis
+        if var_name in ['REDDIT_PASSWORD', 'REDDIT_SECRET', 'YOUTUBE_API_KEY']:
+            logger.info(f"Variável de ambiente {var_name} está configurada")
+        else:
+            logger.info(f"Variável de ambiente {var_name} = {value}")
+    return value
+
 # Configurações de ambiente
-YOUTUBE_API_KEY = os.environ.get('YOUTUBE_API_KEY', '')
-REDDIT_CLIENT_ID = os.environ.get('REDDIT_CLIENT_ID', '')
-REDDIT_SECRET = os.environ.get('REDDIT_SECRET', '')
-REDDIT_USERNAME = os.environ.get('REDDIT_USERNAME', '')
-REDDIT_PASSWORD = os.environ.get('REDDIT_PASSWORD', '')
+YOUTUBE_API_KEY = get_env_var('YOUTUBE_API_KEY')
+REDDIT_CLIENT_ID = get_env_var('REDDIT_CLIENT_ID')
+REDDIT_SECRET = get_env_var('REDDIT_SECRET')
+REDDIT_USERNAME = get_env_var('REDDIT_USERNAME')
+REDDIT_PASSWORD = get_env_var('REDDIT_PASSWORD')
 
 # Função para verificar conexão com Redis
 def check_redis_connection():
@@ -72,7 +86,7 @@ def check_redis_connection():
     import time
     
     # Obter a URL do broker do Celery
-    broker_url = os.environ.get('CELERY_BROKER_URL', '')
+    broker_url = os.getenv('CELERY_BROKER_URL', '')
     if not broker_url:
         logger.error("CELERY_BROKER_URL não configurada!")
         return False
@@ -261,9 +275,17 @@ def fetch_youtube_trends():
     - Adicionado controle de erros melhor
     - Cache de respostas de erro para evitar chamadas repetidas
     """
-    if not YOUTUBE_API_KEY:
+    # Recarrega a chave da API do ambiente
+    youtube_api_key = get_env_var('YOUTUBE_API_KEY')
+    
+    if not youtube_api_key:
         logger.error("Chave de API do YouTube não configurada")
-        return {"error": "Chave de API do YouTube não configurada"}
+        # Tenta obter a chave da variável global
+        if YOUTUBE_API_KEY:
+            logger.info("Usando chave de API do YouTube da variável global")
+            youtube_api_key = YOUTUBE_API_KEY
+        else:
+            return {"error": "Chave de API do YouTube não configurada"}
     
     logger.info("Iniciando busca de tendências do YouTube")
     
@@ -273,7 +295,7 @@ def fetch_youtube_trends():
         from googleapiclient.errors import HttpError
         
         # Cria o serviço do YouTube
-        youtube = build('youtube', 'v3', developerKey=YOUTUBE_API_KEY, cache_discovery=False)
+        youtube = build('youtube', 'v3', developerKey=youtube_api_key, cache_discovery=False)
         
         # Busca vídeos em tendência
         request = youtube.videos().list(
@@ -365,7 +387,30 @@ def fetch_reddit_trends():
     """
     Busca os posts em tendência no Reddit e salva no banco.
     """
-    if not all([REDDIT_CLIENT_ID, REDDIT_SECRET, REDDIT_USERNAME, REDDIT_PASSWORD]):
+    # Recarrega as credenciais do ambiente
+    reddit_client_id = get_env_var('REDDIT_CLIENT_ID')
+    reddit_secret = get_env_var('REDDIT_SECRET')
+    reddit_username = get_env_var('REDDIT_USERNAME')
+    reddit_password = get_env_var('REDDIT_PASSWORD')
+    
+    # Se não encontrou no ambiente, tenta usar as variáveis globais
+    if not reddit_client_id and REDDIT_CLIENT_ID:
+        logger.info("Usando REDDIT_CLIENT_ID da variável global")
+        reddit_client_id = REDDIT_CLIENT_ID
+    
+    if not reddit_secret and REDDIT_SECRET:
+        logger.info("Usando REDDIT_SECRET da variável global")
+        reddit_secret = REDDIT_SECRET
+        
+    if not reddit_username and REDDIT_USERNAME:
+        logger.info("Usando REDDIT_USERNAME da variável global")
+        reddit_username = REDDIT_USERNAME
+        
+    if not reddit_password and REDDIT_PASSWORD:
+        logger.info("Usando REDDIT_PASSWORD da variável global")
+        reddit_password = REDDIT_PASSWORD
+    
+    if not all([reddit_client_id, reddit_secret, reddit_username, reddit_password]):
         logger.error("Credenciais do Reddit não configuradas")
         return {"error": "Reddit credentials not configured"}
     
@@ -376,10 +421,10 @@ def fetch_reddit_trends():
         
         # Cria o cliente do Reddit
         reddit = praw.Reddit(
-            client_id=REDDIT_CLIENT_ID,
-            client_secret=REDDIT_SECRET,
-            username=REDDIT_USERNAME,
-            password=REDDIT_PASSWORD,
+            client_id=reddit_client_id,
+            client_secret=reddit_secret,
+            username=reddit_username,
+            password=reddit_password,
             user_agent="TrendPulse/1.0"
         )
         

@@ -2,11 +2,12 @@ import os
 import logging
 from celery import Celery
 from celery.schedules import crontab
-from celery.signals import worker_ready
+from celery.signals import worker_ready, beat_init, task_success, task_failure, task_revoked
 import time
 from sqlalchemy import create_engine, func
 from sqlalchemy.orm import sessionmaker
 import tempfile
+import shutil
 
 # Configuração de logging
 logging.basicConfig(
@@ -15,98 +16,78 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Função para obter a URL do broker com fallbacks
-def get_broker_url():
-    # Tenta obter a URL do broker da variável de ambiente
-    broker_url = os.environ.get('CELERY_BROKER_URL')
+def get_redis_broker_url():
+    """
+    Determina dinamicamente a URL do broker Redis.
+    Tenta várias opções em ordem de prioridade.
+    """
+    # Opções de URLs para o broker
+    broker_urls = [
+        os.getenv('CELERY_BROKER_URL'),
+        os.getenv('REDIS_URL'),
+        os.getenv('REDIS_TLS_URL'),
+        'redis://localhost:6379/0'
+    ]
     
-    # Se estamos no Render, tenta diferentes formatos de URL
-    if os.environ.get('RENDER'):
-        # Lista de possíveis URLs para tentar
-        possible_urls = [
-            broker_url,
-            broker_url.replace('redis://', 'redis://default:@') if broker_url else None,
-            f"redis://trendpulse-redis.internal:6379/0",
-            f"redis://trendpulse-redis:6379/0",
-            "redis://localhost:6379/0"
-        ]
-        
-        # Filtra URLs None
-        possible_urls = [url for url in possible_urls if url]
-        
-        # Tenta cada URL
-        for url in possible_urls:
-            try:
-                logger.info(f"Tentando conectar ao Redis em: {url}")
-                # Importa aqui para evitar dependência circular
-                import redis
-                r = redis.from_url(url)
-                r.ping()
-                logger.info(f"Conexão bem-sucedida com Redis em: {url}")
-                return url
-            except Exception as e:
-                logger.warning(f"Falha ao conectar ao Redis em {url}: {str(e)}")
-                continue
+    # Filtra URLs vazias ou None
+    valid_urls = [url for url in broker_urls if url]
     
-    # Se nenhuma URL funcionou ou não estamos no Render, retorna a URL original
-    return broker_url or "redis://localhost:6379/0"
+    if not valid_urls:
+        logger.warning("Nenhuma URL válida de Redis encontrada nas variáveis de ambiente. Usando fallback local.")
+        return 'redis://localhost:6379/0'
+    
+    selected_url = valid_urls[0]
+    logger.info(f"Usando broker Redis: {selected_url}")
+    return selected_url
 
-# Obtém as URLs para broker e backend
-broker_url = get_broker_url()
-result_backend = broker_url
-
-logger.info(f"Usando broker URL: {broker_url}")
-logger.info(f"Usando result backend: {result_backend}")
-
-# Define o diretório temporário para o arquivo de agendamento do Beat
-temp_dir = tempfile.gettempdir()
-beat_schedule_path = os.path.join(temp_dir, "celerybeat-schedule")
-logger.info(f"Arquivo de agendamento do Beat será salvo em: {beat_schedule_path}")
+# Obtém a URL do broker
+broker_url = get_redis_broker_url()
 
 # Configuração do Celery
 celery = Celery(
     'app',
     broker=broker_url,
-    backend=result_backend,
-    include=['app.tasks'],
+    backend=broker_url,
+    include=['app.tasks']
 )
 
-# Configurações para limitar o número de conexões ao Redis e otimizar memória
+# Configuração do diretório para o arquivo de agendamento do celerybeat
+beat_schedule_dir = os.environ.get('CELERY_BEAT_SCHEDULE_DIR', '/tmp/celerybeat')
+beat_schedule_file = os.path.join(beat_schedule_dir, 'celerybeat-schedule')
+
+# Verifica se o diretório existe e tem permissões de escrita
+try:
+    if not os.path.exists(beat_schedule_dir):
+        os.makedirs(beat_schedule_dir, exist_ok=True)
+        logger.info(f"Diretório para celerybeat criado: {beat_schedule_dir}")
+    
+    # Testa permissões de escrita
+    test_file = os.path.join(beat_schedule_dir, 'test_write')
+    with open(test_file, 'w') as f:
+        f.write('test')
+    os.remove(test_file)
+    logger.info(f"Diretório {beat_schedule_dir} tem permissões de escrita")
+except Exception as e:
+    logger.error(f"Erro ao configurar diretório para celerybeat: {e}")
+    # Fallback para diretório temporário padrão
+    beat_schedule_dir = '/tmp'
+    beat_schedule_file = os.path.join(beat_schedule_dir, 'celerybeat-schedule')
+    logger.info(f"Usando diretório fallback para celerybeat: {beat_schedule_dir}")
+
+# Configurações do Celery
 celery.conf.update(
-    # Configurações de conexão Redis
-    broker_pool_limit=3,  # Reduzido para economizar memória
-    redis_max_connections=5,  # Reduzido para economizar memória
-    broker_connection_retry=True,
-    broker_connection_retry_on_startup=True,
-    broker_connection_max_retries=10,
-    broker_connection_timeout=30,
-    
-    # Configurações para otimizar memória
-    worker_prefetch_multiplier=1,  # Reduz o número de tarefas pré-carregadas
-    worker_max_tasks_per_child=50,  # Reinicia o worker após 50 tarefas para liberar memória
-    worker_max_memory_per_child=400000,  # Limita a 400MB por processo filho
-    task_time_limit=1800,  # Limita o tempo de execução de tarefas a 30 minutos
-    task_soft_time_limit=1500,  # Aviso de tempo limite suave em 25 minutos
-    
-    # Configurações de concorrência
-    worker_concurrency=1,  # Apenas um processo worker para economizar memória
-    
-    # Configurações de resultado
-    result_expires=3600,  # Resultados expiram após 1 hora
-    
-    # Configurações de retry
-    result_backend_transport_options={
-        'retry_policy': {
-            'interval_start': 0,
-            'interval_step': 1,
-            'interval_max': 5,
-            'max_retries': 10,
-        }
-    },
-    
-    # Configuração do Beat
-    beat_schedule_filename=beat_schedule_path,  # Usa diretório temporário
-    beat_max_loop_interval=300,  # Máximo de 5 minutos entre verificações
+    task_serializer='json',
+    accept_content=['json'],
+    result_serializer='json',
+    timezone='America/Sao_Paulo',
+    enable_utc=True,
+    worker_max_tasks_per_child=100,  # Limita o número de tarefas por processo filho
+    worker_prefetch_multiplier=1,    # Reduz o número de tarefas pré-buscadas
+    broker_pool_limit=5,             # Limita o número de conexões no pool do broker
+    redis_max_connections=10,        # Limita o número máximo de conexões Redis
+    result_expires=3600,             # Resultados expiram após 1 hora
+    beat_schedule_filename=beat_schedule_file,  # Arquivo de agendamento do celerybeat
+    beat_max_loop_interval=300,      # Intervalo máximo entre verificações de agendamento
 )
 
 # Configuração para o Flower
@@ -127,6 +108,43 @@ def on_worker_ready(sender, **kwargs):
     import gc
     gc.collect()
     logger.info("Coleta de lixo executada para liberar memória")
+
+# Sinal executado quando o Beat é inicializado
+@beat_init.connect
+def on_beat_init(sender, **kwargs):
+    logger.info("Beat inicializado!")
+    
+    # Verifica se o diretório temporário existe e tem permissões corretas
+    try:
+        # Garante que o diretório existe
+        os.makedirs(beat_schedule_dir, exist_ok=True)
+        
+        # Verifica se o arquivo de agendamento existe
+        if os.path.exists(beat_schedule_file):
+            # Verifica permissões
+            if not os.access(beat_schedule_file, os.W_OK):
+                logger.warning(f"Arquivo {beat_schedule_file} não tem permissão de escrita. Tentando corrigir...")
+                
+                # Tenta remover o arquivo existente
+                try:
+                    os.remove(beat_schedule_file)
+                    logger.info(f"Arquivo {beat_schedule_file} removido com sucesso.")
+                except Exception as e:
+                    logger.error(f"Erro ao remover arquivo {beat_schedule_file}: {str(e)}")
+                    
+                    # Tenta criar um novo arquivo em um local diferente
+                    new_path = os.path.join(beat_schedule_dir, f"celerybeat-{os.getpid()}")
+                    logger.info(f"Tentando usar novo caminho: {new_path}")
+                    celery.conf.beat_schedule_filename = new_path
+        
+        logger.info(f"Beat usando arquivo de agendamento: {celery.conf.beat_schedule_filename}")
+    except Exception as e:
+        logger.error(f"Erro ao configurar diretório do Beat: {str(e)}")
+        
+        # Tenta usar um caminho alternativo como último recurso
+        fallback_path = os.path.join(beat_schedule_dir, f"celerybeat-{os.getpid()}")
+        logger.info(f"Usando caminho alternativo para o Beat: {fallback_path}")
+        celery.conf.beat_schedule_filename = fallback_path
 
 # Configuração para tarefas periódicas (beat)
 celery.conf.beat_schedule = {
@@ -192,6 +210,18 @@ def setup_initial_tasks(sender, **kwargs):
     except Exception as e:
         logger.error(f"Erro ao verificar o banco de dados: {str(e)}")
 
+# Handlers para sinais do Celery para logging
+@task_success.connect
+def task_success_handler(sender=None, **kwargs):
+    logger.info(f"Tarefa {sender.name} concluída com sucesso")
+
+@task_failure.connect
+def task_failure_handler(sender=None, task_id=None, exception=None, **kwargs):
+    logger.error(f"Tarefa {sender.name} falhou: {exception}")
+
+@task_revoked.connect
+def task_revoked_handler(sender=None, request=None, **kwargs):
+    logger.warning(f"Tarefa {sender.name} foi revogada")
 
 if __name__ == "__main__":
     celery.start()
