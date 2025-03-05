@@ -2,7 +2,7 @@ from fastapi import FastAPI, Depends, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from sqlalchemy import desc, text
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from datetime import datetime, timedelta
 import logging
 import os
@@ -10,6 +10,7 @@ import time
 from app.models import get_db, Trend, create_tables, SessionLocal
 from app.tasks import fetch_all_trends
 from app.check_db import check_redis_connection
+from fastapi import BackgroundTasks
 
 # Configuração de logging
 logging.basicConfig(
@@ -280,7 +281,7 @@ status_cache = {
 }
 STATUS_CACHE_TTL = 60  # Tempo de vida do cache em segundos
 
-@app.get("/api/status", tags=["Status"])
+@app.get("/api/status", tags=["Status"], response_model=Dict[str, Any])
 async def status(force_check: bool = Query(False, description="Força uma nova verificação ignorando o cache")):
     """
     Endpoint para verificar o status da API e suas dependências.
@@ -379,6 +380,166 @@ def get_config():
         "cors_enabled": True,
         "version": "1.0.0",
         "timestamp": datetime.now().isoformat()
+    }
+
+
+@app.get("/api/database/stats", response_model=Dict[str, Any])
+async def get_database_stats():
+    """
+    Retorna estatísticas sobre o uso do banco de dados.
+    Inclui tamanho total do banco, tamanho das tabelas e contagem de registros.
+    """
+    from sqlalchemy import text, func
+    from app.models import get_db_session, Trend
+    import os
+    
+    db = get_db_session()
+    try:
+        stats = {
+            "environment": os.getenv("ENVIRONMENT", "development"),
+            "database_type": "postgresql" if "postgres" in os.getenv("DATABASE_URL", "").lower() else "mysql",
+            "tables": {},
+            "total_trends": 0,
+            "trends_by_platform": {},
+            "oldest_trend": None,
+            "newest_trend": None,
+        }
+        
+        # Contagem total de tendências
+        stats["total_trends"] = db.query(func.count(Trend.id)).scalar()
+        
+        # Contagem por plataforma
+        platform_counts = db.query(Trend.platform, func.count(Trend.id)).group_by(Trend.platform).all()
+        for platform, count in platform_counts:
+            stats["trends_by_platform"][platform] = count
+        
+        # Tendência mais antiga e mais recente
+        oldest = db.query(Trend).order_by(Trend.created_at.asc()).first()
+        newest = db.query(Trend).order_by(Trend.created_at.desc()).first()
+        
+        if oldest:
+            stats["oldest_trend"] = {
+                "id": oldest.id,
+                "title": oldest.title,
+                "platform": oldest.platform,
+                "created_at": oldest.created_at.isoformat(),
+            }
+        
+        if newest:
+            stats["newest_trend"] = {
+                "id": newest.id,
+                "title": newest.title,
+                "platform": newest.platform,
+                "created_at": newest.created_at.isoformat(),
+            }
+        
+        # Estatísticas específicas por tipo de banco
+        if stats["database_type"] == "postgresql":
+            # PostgreSQL
+            db_size_query = text("""
+                SELECT pg_size_pretty(pg_database_size(current_database())) as size,
+                       pg_database_size(current_database()) as bytes
+            """)
+            result = db.execute(db_size_query).fetchone()
+            stats["database_size"] = {
+                "formatted": result.size,
+                "bytes": result.bytes
+            }
+            
+            # Tamanho das tabelas
+            table_size_query = text("""
+                SELECT 
+                    tablename as table_name,
+                    pg_size_pretty(pg_total_relation_size(quote_ident(tablename))) as size,
+                    pg_total_relation_size(quote_ident(tablename)) as bytes
+                FROM pg_tables
+                WHERE schemaname = 'public'
+                ORDER BY pg_total_relation_size(quote_ident(tablename)) DESC
+            """)
+            
+            for row in db.execute(table_size_query).fetchall():
+                stats["tables"][row.table_name] = {
+                    "size": row.size,
+                    "bytes": row.bytes
+                }
+                
+        else:
+            # MySQL
+            db_size_query = text("""
+                SELECT 
+                    table_schema as database_name,
+                    ROUND(SUM(data_length + index_length) / 1024 / 1024, 2) as size_mb,
+                    SUM(data_length + index_length) as bytes
+                FROM information_schema.TABLES 
+                WHERE table_schema = DATABASE()
+                GROUP BY table_schema
+            """)
+            result = db.execute(db_size_query).fetchone()
+            if result:
+                stats["database_size"] = {
+                    "formatted": f"{result.size_mb} MB",
+                    "bytes": result.bytes
+                }
+            
+            # Tamanho das tabelas
+            table_size_query = text("""
+                SELECT 
+                    table_name,
+                    ROUND((data_length + index_length) / 1024 / 1024, 2) as size_mb,
+                    (data_length + index_length) as bytes
+                FROM information_schema.TABLES
+                WHERE table_schema = DATABASE()
+                ORDER BY (data_length + index_length) DESC
+            """)
+            
+            for row in db.execute(table_size_query).fetchall():
+                stats["tables"][row.table_name] = {
+                    "size": f"{row.size_mb} MB",
+                    "bytes": row.bytes
+                }
+        
+        return stats
+    except Exception as e:
+        logger.error(f"Erro ao obter estatísticas do banco de dados: {e}")
+        return {"error": str(e)}
+    finally:
+        db.close()
+
+
+@app.post("/api/database/cleanup", response_model=Dict[str, Any])
+async def cleanup_database(
+    max_days: int = Query(60, description="Número máximo de dias para manter as tendências"),
+    max_records: int = Query(5000, description="Número máximo de registros a manter por plataforma"),
+    background_tasks: BackgroundTasks = BackgroundTasks()
+):
+    """
+    Executa a limpeza do banco de dados para remover tendências antigas.
+    Esta operação é executada em segundo plano para não bloquear a API.
+    """
+    from app.tasks import clean_old_trends
+    
+    # Verificar se o usuário tem permissão para executar esta operação
+    # Em um ambiente de produção, você deve adicionar autenticação aqui
+    
+    def run_cleanup():
+        try:
+            result = clean_old_trends(max_days=max_days, max_records=max_records)
+            logger.info(f"Limpeza manual concluída: {result}")
+            return result
+        except Exception as e:
+            logger.error(f"Erro durante a limpeza manual: {e}")
+            return {"error": str(e)}
+    
+    # Adicionar a tarefa para ser executada em segundo plano
+    background_tasks.add_task(run_cleanup)
+    
+    return {
+        "status": "started",
+        "message": "A limpeza do banco de dados foi iniciada em segundo plano",
+        "parameters": {
+            "max_days": max_days,
+            "max_records": max_records
+        }
     }
 
 
