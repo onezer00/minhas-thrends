@@ -40,9 +40,9 @@ logger.info(f"Ambiente: {ENVIRONMENT}")
 logger.info(f"CORS permitido para: {ALLOWED_ORIGINS}")
 
 app = FastAPI(
-    title="Aggregator Backend API",
-    description="API para agregar conteúdo de YouTube e Reddit",
-    version="1.0.0"
+    title="TrendPulse API",
+    description="API para agregação de tendências de várias plataformas",
+    version="1.0.0",
 )
 
 # Configuração de CORS
@@ -55,11 +55,16 @@ app.add_middleware(
 )
 
 # Rotas da API
-
 @app.get("/")
 def read_root():
-    return {"message": "TrendPulse API v1.0"}
-
+    """
+    Rota raiz da API.
+    """
+    return {
+        "message": "Bem-vindo à API TrendPulse",
+        "docs": "/docs",
+        "status": "/api/status"
+    }
 
 @app.get("/api/trends")
 def get_trends(
