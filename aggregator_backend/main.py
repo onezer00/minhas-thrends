@@ -1,8 +1,25 @@
 import json
+import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from aggregator_backend.models import SessionLocal, AggregatedContent
 from aggregator_backend.tasks import fetch_reddit_data, fetch_twitter_data, fetch_youtube_data
+
+# Configuração de ambiente
+ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
+IS_DEVELOPMENT = ENVIRONMENT.lower() == "development"
+
+# Configuração de CORS para permitir acesso apenas do GitHub Pages
+GITHUB_PAGES_URL = os.getenv("GITHUB_PAGES_URL", "https://<seu-usuario>.github.io")
+ALLOWED_ORIGINS = [
+    GITHUB_PAGES_URL,
+] if not IS_DEVELOPMENT else [
+    # URLs para desenvolvimento local
+    "http://localhost:3000",
+    "http://localhost:5173",
+    "http://127.0.0.1:3000",
+    "http://127.0.0.1:5173",
+]
 
 app = FastAPI(
     title="Aggregator Backend API",
@@ -10,10 +27,10 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# Habilita CORS (opcional, ajuste as origens conforme necessário)
+# Configuração de CORS atualizada
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

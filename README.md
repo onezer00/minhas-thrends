@@ -20,14 +20,15 @@ Este projeto foi estruturado para rodar os serviços de background (Worker, Beat
   - [Configuração das Variáveis de Ambiente](#configuração-das-variáveis-de-ambiente)
 - [Estrutura do Projeto](#estrutura-do-projeto)
 - [Executando a Aplicação](#executando-a-aplicação)
-  - [Rodando a API Localmente](#rodando-a-api-localmente)
-  - [Rodando os Serviços de Background com Docker Compose](#rodando-os-serviços-de-background-com-docker-compose)
+  - [Modo Desenvolvimento](#modo-desenvolvimento)
+  - [Modo Produção](#modo-produção)
 - [API Endpoints](#api-endpoints)
 - [Agendamento de Tarefas com Celery](#agendamento-de-tarefas-com-celery)
 - [Monitoramento com Flower](#monitoramento-com-flower)
 - [Troubleshooting](#troubleshooting)
 - [Contribuições](#contribuições)
 - [Licença](#licença)
+- [Deploy no Render.com](#deploy-no-rendercom)
 
 ## Recursos e Funcionalidades
 
@@ -89,6 +90,12 @@ REDDIT_PASSWORD=your_reddit_password
 # Configuração do Banco de Dados
 DATABASE_URL=sqlite:///data/aggregator.db
 
+# Ambiente (development/production)
+ENVIRONMENT=development
+
+# URL do GitHub Pages (produção)
+GITHUB_PAGES_URL=https://seu-usuario.github.io
+
 ```
 
 ## Estrutura do Projeto
@@ -109,28 +116,79 @@ aggregator-backend/
 
 ```
 ## Executando a Aplicação
-### Rodando a API Localmente
-Para executar a API FastAPI fora do Docker (ideal para debug), use:
 
-```bash
-uvicorn aggregator_backend.main:app --host 0.0.0.0 --port 8000
+Existem dois modos de execução: desenvolvimento e produção.
+
+### Modo Desenvolvimento
+
+No modo desenvolvimento, a API roda localmente (fora do Docker) para facilitar o debug, enquanto os serviços de suporte (MySQL, Redis, etc.) rodam via Docker.
+
+1. Configure a variável de ambiente:
+   ```bash
+   # Windows
+   set ENVIRONMENT=development
+   
+   # Linux/Mac
+   export ENVIRONMENT=development
+   ```
+
+2. Inicie os serviços de suporte:
+   ```bash
+   docker-compose up -d mysql redis worker beat flower
+   ```
+
+3. Execute a API localmente:
+   ```bash
+   uvicorn aggregator_backend.main:app --reload --host 0.0.0.0 --port 8000
+   ```
+
+### Modo Produção
+
+No modo produção, todos os serviços, incluindo a API, rodam via Docker.
+
+1. Configure a variável de ambiente (opcional, o padrão é "production"):
+   ```bash
+   # Windows
+   set ENVIRONMENT=production
+   
+   # Linux/Mac
+   export ENVIRONMENT=production
+   ```
+
+2. Inicie todos os serviços:
+   ```bash
+   docker-compose --profile production up -d
+   ```
+
+Isso iniciará:
+- API FastAPI (porta 8000)
+- MySQL (porta 3307)
+- Redis (porta 6379)
+- Worker do Celery
+- Celery Beat
+- Flower (porta 5555)
+
+### Variáveis de Ambiente
+
+Configure as seguintes variáveis no arquivo `.env`:
+
+```dotenv
+# Ambiente (development/production)
+ENVIRONMENT=development
+
+# Credenciais da API do YouTube
+YOUTUBE_API_KEY=your_youtube_api_key
+
+# Credenciais da API do Reddit
+REDDIT_CLIENT_ID=your_reddit_client_id
+REDDIT_SECRET=your_reddit_secret
+REDDIT_USERNAME=your_reddit_username
+REDDIT_PASSWORD=your_reddit_password
+
+# URL do GitHub Pages (produção)
+GITHUB_PAGES_URL=https://seu-usuario.github.io
 ```
-A API ficará disponível em http://localhost:8000.
 
-### Rodando os Serviços de Background com Docker Compose
-Para rodar os serviços de background (Celery Worker, Beat, Flower e Redis) via Docker, use o seguinte comando:
-
-```bash
-docker-compose build
-docker-compose up -d
-```
-
-Os serviços iniciados serão:
-
-- **redis**: Broker para o Celery.
-- **worker**: Processa as tasks do Celery.
-- **beat**: Agenda as tasks conforme configurado.
-- **flower**: Interface de monitoramento do Celery, acessível em http://localhost:5555.
 ## API Endpoints
 ### GET ``/trends``
 Retorna os registros de conteúdo agregado, permitindo filtrar por plataforma e keyword.
@@ -174,4 +232,50 @@ Contribuições são bem-vindas! Se você encontrar bugs ou tiver sugestões de 
 
 ## Licença
 Este projeto é licenciado sob a MIT License. Consulte o arquivo [LICENSE](LICENSE) para mais detalhes.
+
+## Deploy no Render.com
+
+Para fazer o deploy da aplicação no Render.com:
+
+1. Crie uma conta no [Render.com](https://render.com) e conecte seu repositório do GitHub.
+
+2. No Dashboard do Render, clique em "New" e selecione "Blueprint".
+
+3. Selecione o repositório onde está o código da aplicação.
+
+4. O Render detectará automaticamente o arquivo `render.yaml` e criará todos os serviços necessários:
+   - API FastAPI (Web Service)
+   - Worker do Celery
+   - Celery Beat
+   - Redis
+   - MySQL Database
+
+5. Configure as variáveis de ambiente secretas:
+   - `YOUTUBE_API_KEY`
+   - `REDDIT_CLIENT_ID`
+   - `REDDIT_SECRET`
+   - `REDDIT_USERNAME`
+   - `REDDIT_PASSWORD`
+   - `GITHUB_PAGES_URL`
+
+6. Clique em "Apply" para iniciar o deploy.
+
+### Observações Importantes
+
+- O plano gratuito do Render tem algumas limitações:
+  - Os serviços "adormecem" após 15 minutos de inatividade
+  - O banco MySQL tem limite de 1GB de armazenamento
+  - O Redis tem limite de memória de 25MB
+  - Há limites de banda e CPU
+
+- Para o frontend, atualize a URL da API no seu código para apontar para a URL do Render:
+  ```javascript
+  const API_URL = process.env.NODE_ENV === 'production'
+    ? 'https://trendpulse-api.onrender.com'
+    : 'http://localhost:8000';
+  ```
+
+- Os logs de cada serviço podem ser visualizados no dashboard do Render.
+
+- O primeiro deploy pode levar alguns minutos, pois o Render precisa construir a imagem Docker.
 

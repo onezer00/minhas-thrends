@@ -1,59 +1,146 @@
 version: '3.8'
 services:
-  migrate:
-      build: .
-      command: python -c "from aggregator_backend.db.db_init import create_db; create_db()"
-      volumes:
-        - ./data:/app/data
-      depends_on:
-        - redis
-
-  redis:
-    image: redis:7
-    container_name: aggregator_redis
-    ports:
-      - "6379:6379"
-
-  worker:
+  # API FastAPI (novo serviço)
+  api:
     build: .
+    container_name: trendpulse_api
+    ports:
+      - "8000:8000"
     environment:
-      - BROKER_URL=redis://redis:6379/0
-      - BACKEND_URL=redis://redis:6379/0
-      - TWITTER_BEARER=${TWITTER_BEARER}
+      - DATABASE_URL=mysql+pymysql://root:root@mysql:3306/trendpulse
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - ENVIRONMENT=${ENVIRONMENT:-production}
+      - GITHUB_PAGES_URL=${GITHUB_PAGES_URL}
       - YOUTUBE_API_KEY=${YOUTUBE_API_KEY}
       - REDDIT_CLIENT_ID=${REDDIT_CLIENT_ID}
       - REDDIT_SECRET=${REDDIT_SECRET}
-    container_name: aggregator_worker
-    # No Windows, use --pool=solo ou --pool=threads para evitar problemas de permissão
-    command: celery -A aggregator_backend.celery_app.celery worker --pool=solo --loglevel=info --events
-    depends_on:
-      - redis
-      - migrate
+      - REDDIT_USERNAME=${REDDIT_USERNAME}
+      - REDDIT_PASSWORD=${REDDIT_PASSWORD}
     volumes:
-      - ./data:/app/data
+      - .:/app
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    profiles:
+      - production  # Perfil para produção
+    command: uvicorn aggregator_backend.main:app --host 0.0.0.0 --port 8000
 
+  # MySQL
+  mysql:
+    image: mysql:8.0
+    container_name: trendpulse_mysql
+    ports:
+      - "3307:3306"
+    environment:
+      - MYSQL_ROOT_PASSWORD=root
+      - MYSQL_DATABASE=trendpulse
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-proot"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Redis
+  redis:
+    image: redis:7.0
+    container_name: trendpulse_redis
+    command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    sysctls:
+      net.core.somaxconn: 1024
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+    restart: unless-stopped
+
+  # Migrate
+  migrate:
+    build: .
+    container_name: trendpulse_migrate
+    command: >
+      /bin/bash -c "
+        echo 'Aguardando MySQL...' &&
+        sleep 10 &&
+        cd /app && python -c 'from aggregator_backend.models import create_tables; create_tables()'
+      "
+    environment:
+      - DATABASE_URL=mysql+pymysql://trendpulse:trendpulse@mysql/trendpulse
+    volumes:
+      - .:/app
+    depends_on:
+      mysql:
+        condition: service_healthy
+
+  # Worker
+  worker:
+    build: .
+    container_name: trendpulse_worker
+    command: celery -A aggregator_backend.tasks worker --loglevel=info
+    environment:
+      - DATABASE_URL=mysql+pymysql://root:root@mysql:3306/trendpulse
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - YOUTUBE_API_KEY=${YOUTUBE_API_KEY}
+      - REDDIT_CLIENT_ID=${REDDIT_CLIENT_ID}
+      - REDDIT_SECRET=${REDDIT_SECRET}
+      - REDDIT_USERNAME=${REDDIT_USERNAME}
+      - REDDIT_PASSWORD=${REDDIT_PASSWORD}
+    volumes:
+      - .:/app
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+  # Beat
   beat:
     build: .
-    container_name: aggregator_beat
-    command: celery -A aggregator_backend.celery_app.celery beat --loglevel=info
-    depends_on:
-      - redis
-      - migrate
+    container_name: trendpulse_beat
+    command: celery -A aggregator_backend.tasks beat --loglevel=info
+    environment:
+      - DATABASE_URL=mysql+pymysql://root:root@mysql:3306/trendpulse
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
     volumes:
-      - ./data:/app/data
+      - .:/app
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
 
+  # Flower
   flower:
     build: .
-    container_name: aggregator_flower
-    command: celery -A aggregator_backend.celery_app.celery flower --port=5555 --loglevel=info
-    depends_on:
-      - redis
-      - migrate
-    environment:
-      - BROKER_URL=redis://redis:6379/0
-      - BACKEND_URL=redis://redis:6379/0
-      # Se precisar de API keys, etc., adicione aqui também
-    volumes:
-      - ./data:/app/data
+    container_name: trendpulse_flower
+    command: celery -A aggregator_backend.tasks flower --port=5555
     ports:
       - "5555:5555"
+    volumes:
+      - .:/app
+    depends_on:
+      redis:
+        condition: service_healthy
+
+volumes:
+  mysql_data:
+  redis_data:

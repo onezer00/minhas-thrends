@@ -1,0 +1,109 @@
+services:
+  # API FastAPI
+  - type: web
+    name: trendpulse-api
+    env: docker
+    dockerfilePath: ./Dockerfile
+    plan: free
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: trendpulse-db
+          property: connectionString
+      - key: CELERY_BROKER_URL
+        fromService:
+          name: trendpulse-redis
+          type: redis
+          property: connectionString
+      - key: CELERY_RESULT_BACKEND
+        fromService:
+          name: trendpulse-redis
+          type: redis
+          property: connectionString
+      - key: ENVIRONMENT
+        value: production
+      - key: GITHUB_PAGES_URL
+        sync: false
+      - key: YOUTUBE_API_KEY
+        sync: false
+      - key: REDDIT_CLIENT_ID
+        sync: false
+      - key: REDDIT_SECRET
+        sync: false
+      - key: REDDIT_USERNAME
+        sync: false
+      - key: REDDIT_PASSWORD
+        sync: false
+
+  # Celery Worker
+  - type: worker
+    name: trendpulse-worker
+    env: docker
+    dockerfilePath: ./Dockerfile
+    plan: free
+    command: celery -A aggregator_backend.tasks worker --loglevel=info
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: trendpulse-db
+          property: connectionString
+      - key: CELERY_BROKER_URL
+        fromService:
+          name: trendpulse-redis
+          type: redis
+          property: connectionString
+      - key: CELERY_RESULT_BACKEND
+        fromService:
+          name: trendpulse-redis
+          type: redis
+          property: connectionString
+      - key: YOUTUBE_API_KEY
+        sync: false
+      - key: REDDIT_CLIENT_ID
+        sync: false
+      - key: REDDIT_SECRET
+        sync: false
+      - key: REDDIT_USERNAME
+        sync: false
+      - key: REDDIT_PASSWORD
+        sync: false
+
+  # Celery Beat
+  - type: worker
+    name: trendpulse-beat
+    env: docker
+    dockerfilePath: ./Dockerfile
+    plan: free
+    command: celery -A aggregator_backend.tasks beat --loglevel=info
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: trendpulse-db
+          property: connectionString
+      - key: CELERY_BROKER_URL
+        fromService:
+          name: trendpulse-redis
+          type: redis
+          property: connectionString
+      - key: CELERY_RESULT_BACKEND
+        fromService:
+          name: trendpulse-redis
+          type: redis
+          property: connectionString
+
+  # Redis
+  - type: redis
+    name: trendpulse-redis
+    plan: free
+    maxmemoryPolicy: allkeys-lru
+    ipAllowList: []
+
+  # MySQL Database
+  - type: pserv
+    name: trendpulse-db
+    env: docker
+    plan: free
+    disk:
+      name: data
+      mountPath: /var/lib/mysql
+      sizeGB: 1 
