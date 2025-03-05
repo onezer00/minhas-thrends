@@ -133,31 +133,31 @@ def trigger_fetch_trends():
     return {"message": "Tarefa de busca de tendências iniciada", "task_id": task.id}
 
 
-@app.get("/api/status")
-def get_status(db: Session = Depends(get_db)):
+@app.get("/api/status", tags=["Status"])
+async def status():
     """
-    Retorna estatísticas gerais do sistema.
+    Endpoint para verificar o status da API e suas dependências.
+    Usado pelo Render.com para healthcheck.
     """
-    from sqlalchemy import func
+    from aggregator_backend.check_db import check_redis_connection
     
-    # Total de tendências
-    total_trends = db.query(func.count(Trend.id)).scalar()
+    redis_ok = check_redis_connection()
     
-    # Total por plataforma
-    platform_counts = db.query(
-        Trend.platform, 
-        func.count(Trend.id).label("count")
-    ).group_by(Trend.platform).all()
-    
-    # Tendência mais recente
-    latest_trend = db.query(Trend).order_by(desc(Trend.created_at)).first()
-    latest_date = latest_trend.created_at if latest_trend else None
+    # Verificar conexão com o banco de dados
+    db_ok = True
+    try:
+        db = SessionLocal()
+        db.execute("SELECT 1")
+        db.close()
+    except Exception as e:
+        db_ok = False
+        logger.error(f"Erro ao verificar banco de dados: {str(e)}")
     
     return {
-        "total_trends": total_trends,
-        "platform_counts": {p: c for p, c in platform_counts},
-        "latest_update": latest_date.isoformat() if latest_date else None,
-        "app_version": "1.0.0"
+        "status": "ok" if redis_ok and db_ok else "error",
+        "redis": "connected" if redis_ok else "disconnected",
+        "database": "connected" if db_ok else "disconnected",
+        "timestamp": datetime.utcnow().isoformat()
     }
 
 
