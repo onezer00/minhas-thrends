@@ -140,14 +140,10 @@ services:
     ipAllowList: []
 
   # MySQL Database
-  - type: pserv
+  - type: mysql
     name: trendpulse-db
-    env: docker
-    plan: starter
-    disk:
-      name: data
-      mountPath: /var/lib/mysql
-      sizeGB: 1
+    plan: free
+    version: "8"
     envVars:
       - key: MYSQL_ROOT_PASSWORD
         generateValue: true
