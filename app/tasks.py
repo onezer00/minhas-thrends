@@ -12,6 +12,7 @@ from celery.signals import task_prerun, task_postrun
 from celery.schedules import crontab
 import redis
 import gc
+import psutil
 
 # Configuração para o Flower usar menos conexões ao Redis
 os.environ['FLOWER_PERSISTENT'] = 'False'  # Desativa persistência para reduzir conexões
@@ -175,7 +176,6 @@ def cleanup_after_task(task_id, task, *args, **kwargs):
     
     # Registra uso de memória
     try:
-        import psutil
         process = psutil.Process(os.getpid())
         memory_info = process.memory_info()
         logger.info(f"Uso de memória após tarefa {task.name}: {memory_info.rss / 1024 / 1024:.2f} MB")
@@ -319,7 +319,7 @@ def fetch_youtube_trends():
                 # Verifica se o vídeo já existe no banco
                 existing = db.query(Trend).filter(
                     Trend.platform == 'youtube',
-                    Trend.platform_id == video_id
+                    Trend.external_id == video_id
                 ).first()
                 
                 if existing:
@@ -341,14 +341,14 @@ def fetch_youtube_trends():
                     # Extrai hashtags
                     tags = extract_hashtags(description)
                     if not tags and 'tags' in snippet:
-                        tags = snippet['tags'][:5] if len(snippet.get('tags', [])) > 5 else snippet.get('tags', [])
+                        tags = snippet.get('tags', [])[:10]  # Limita a 10 tags
                     
                     # Cria o objeto Trend
                     trend = Trend(
-                        title=title[:255],  # Limita tamanho para evitar erros
-                        description=description[:1000] if description else "",  # Limita tamanho
+                        title=title[:255],  # Limita tamanho
+                        description=description[:1000],  # Limita tamanho
                         platform="youtube",
-                        platform_id=video_id,
+                        external_id=video_id,
                         category=category,
                         author=snippet.get('channelTitle', '')[:100],  # Limita tamanho
                         url=f"https://www.youtube.com/watch?v={video_id}",
@@ -356,18 +356,25 @@ def fetch_youtube_trends():
                         views=int(statistics.get('viewCount', 0)),
                         likes=int(statistics.get('likeCount', 0)),
                         comments=int(statistics.get('commentCount', 0)),
-                        tags=",".join(tags[:10]) if tags else "",  # Limita número de tags
-                        created_at=datetime.now(),
-                        updated_at=datetime.now()
+                        published_at=datetime.fromisoformat(snippet.get('publishedAt', '').replace('Z', '+00:00'))
                     )
                     
+                    # Adiciona a tendência ao banco
                     db.add(trend)
                     db.commit()
+                    
+                    # Adiciona as tags
+                    if tags:
+                        for tag_name in tags:
+                            tag = TrendTag(
+                                trend_id=trend.id,
+                                name=tag_name[:50]  # Limita tamanho
+                            )
+                            db.add(tag)
+                        db.commit()
+                    
                     count += 1
-                
-                # Libera memória a cada 10 itens
-                if count % 10 == 0:
-                    gc.collect()
+                    logger.info(f"Vídeo {video_id} adicionado ao banco")
             
             logger.info(f"Busca de tendências do YouTube concluída. {count} novos vídeos adicionados.")
             return {"status": "success", "count": count}
@@ -429,10 +436,7 @@ def fetch_reddit_trends():
         )
         
         # Subreddits populares no Brasil
-        subreddits = [
-            "brasil", "brasilivre", "desabafos", "investimentos", 
-            "futebol", "conversas", "gamebirbr", "tiodopave"
-        ]
+        subreddits = ["popular", "brasil", "technology", "programming", "science"]
         
         # Processa os resultados
         db = SessionLocal()
@@ -449,7 +453,7 @@ def fetch_reddit_trends():
                         # Verifica se o post já existe no banco
                         existing = db.query(Trend).filter(
                             Trend.platform == 'reddit',
-                            Trend.platform_id == post.id
+                            Trend.external_id == post.id
                         ).first()
                         
                         if existing:
@@ -484,7 +488,7 @@ def fetch_reddit_trends():
                                 title=title[:255],  # Limita tamanho
                                 description=description[:1000],  # Limita tamanho
                                 platform="reddit",
-                                platform_id=post.id,
+                                external_id=post.id,
                                 category=category,
                                 author=str(post.author)[:100] if post.author else "deleted",  # Limita tamanho
                                 url=f"https://www.reddit.com{post.permalink}",
@@ -492,21 +496,27 @@ def fetch_reddit_trends():
                                 views=post.score,
                                 likes=post.score,
                                 comments=post.num_comments,
-                                tags=",".join(tags[:10]) if tags else "",  # Limita número de tags
-                                created_at=datetime.now(),
-                                updated_at=datetime.now()
+                                published_at=datetime.fromtimestamp(post.created_utc)
                             )
                             
+                            # Adiciona a tendência ao banco
                             db.add(trend)
                             db.commit()
+                            
+                            # Adiciona as tags
+                            if tags:
+                                for tag_name in tags:
+                                    tag = TrendTag(
+                                        trend_id=trend.id,
+                                        name=tag_name[:50]  # Limita tamanho
+                                    )
+                                    db.add(tag)
+                                db.commit()
+                            
                             count += 1
-                        
-                        # Libera memória a cada 5 itens
-                        if count % 5 == 0:
-                            gc.collect()
-                
-                except Exception as subreddit_error:
-                    logger.error(f"Erro ao processar subreddit {subreddit_name}: {str(subreddit_error)}")
+                            logger.info(f"Post {post.id} adicionado ao banco")
+                except Exception as e:
+                    logger.error(f"Erro ao processar subreddit {subreddit_name}: {str(e)}")
                     continue
             
             logger.info(f"Busca de tendências do Reddit concluída. {count} novos posts adicionados.")
