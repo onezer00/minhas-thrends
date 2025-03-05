@@ -51,10 +51,6 @@ celery.conf.update(
     task_reject_on_worker_lost=True,
     task_time_limit=1800,
     
-    # Configurações de pool de conexões do Redis
-    broker_pool_limit=10,
-    redis_max_connections=20,
-    
     # Configurações de heartbeat
     broker_heartbeat=10,
     broker_connection_retry=True,
