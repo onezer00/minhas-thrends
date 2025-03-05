@@ -1,0 +1,99 @@
+services:
+  # Serviço principal - API FastAPI
+  - type: web
+    name: trendpulse-api
+    env: docker
+    dockerfilePath: ./Dockerfile
+    envVars:
+      - key: YOUTUBE_API_KEY
+        sync: false
+      - key: REDDIT_CLIENT_ID
+        sync: false
+      - key: REDDIT_SECRET
+        sync: false
+      - key: REDDIT_USERNAME
+        sync: false
+      - key: REDDIT_PASSWORD
+        sync: false
+      - key: GITHUB_PAGES_URL
+        sync: false
+      - key: DATABASE_URL
+        fromDatabase:
+          name: trendpulse-db
+          property: connectionString
+      - key: CELERY_BROKER_URL
+        fromService:
+          type: redis
+          name: trendpulse-redis
+          property: connectionString
+      - key: CELERY_RESULT_BACKEND
+        fromService:
+          type: redis
+          name: trendpulse-redis
+          property: connectionString
+
+  # Serviço Worker do Celery
+  - type: worker
+    name: trendpulse-worker
+    env: docker
+    dockerfilePath: ./Dockerfile
+    dockerCommand: celery -A aggregator_backend.celery_app worker --loglevel=info
+    envVars:
+      - key: YOUTUBE_API_KEY
+        sync: false
+      - key: REDDIT_CLIENT_ID
+        sync: false
+      - key: REDDIT_SECRET
+        sync: false
+      - key: REDDIT_USERNAME
+        sync: false
+      - key: REDDIT_PASSWORD
+        sync: false
+      - key: DATABASE_URL
+        fromDatabase:
+          name: trendpulse-db
+          property: connectionString
+      - key: CELERY_BROKER_URL
+        fromService:
+          type: redis
+          name: trendpulse-redis
+          property: connectionString
+      - key: CELERY_RESULT_BACKEND
+        fromService:
+          type: redis
+          name: trendpulse-redis
+          property: connectionString
+
+  # Serviço Beat do Celery
+  - type: worker
+    name: trendpulse-beat
+    env: docker
+    dockerfilePath: ./Dockerfile
+    dockerCommand: celery -A aggregator_backend.celery_app beat --loglevel=info
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: trendpulse-db
+          property: connectionString
+      - key: CELERY_BROKER_URL
+        fromService:
+          type: redis
+          name: trendpulse-redis
+          property: connectionString
+      - key: CELERY_RESULT_BACKEND
+        fromService:
+          type: redis
+          name: trendpulse-redis
+          property: connectionString
+
+databases:
+  - name: trendpulse-db
+    databaseName: trendpulse
+    user: trendpulse
+    plan: free
+
+services:
+  - type: redis
+    name: trendpulse-redis
+    plan: free
+    ipAllowList: [] 

@@ -46,4 +46,4 @@ docker-compose.override.yml
 # Outros arquivos do sistema
 .DS_Store
 Thumbs.db
-celerybeat-schedule.*
+celerybeat-schedule*
