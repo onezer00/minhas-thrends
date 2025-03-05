@@ -70,7 +70,7 @@ def check_redis_connection():
 def check_database_connection():
     """Verifica a conexão com o banco de dados."""
     import os
-    from sqlalchemy import create_engine
+    from sqlalchemy import create_engine, text
     
     database_url = os.environ.get('DATABASE_URL')
     logger.info(f"Verificando conexão com o banco de dados: {database_url}")
@@ -80,34 +80,52 @@ def check_database_connection():
         database_url = database_url.replace('mysql://', 'mysql+pymysql://')
         logger.info(f"URL ajustada para usar pymysql: {database_url}")
     
-    try:
-        engine = create_engine(database_url)
-        connection = engine.connect()
-        connection.close()
-        logger.info("Conexão com o banco de dados bem-sucedida!")
-        return True
-    except Exception as e:
-        logger.error(f"Erro ao conectar ao banco de dados: {str(e)}")
-        return False
-        
-        # Tenta conectar e executar uma consulta simples
-        with engine.connect() as connection:
-            result = connection.execute(text("SELECT 1"))
-            logger.info(f"Conexão bem-sucedida! Resultado: {result.fetchone()}")
-            
-            # Verifica informações do banco de dados
-            try:
-                db_info = connection.execute(text("SELECT VERSION()"))
-                logger.info(f"Versão do banco de dados: {db_info.fetchone()}")
-            except Exception as e:
-                logger.warning(f"Não foi possível obter a versão do banco: {str(e)}")
-            
-        return True
+    # Substitui localhost pelo nome do serviço no Render se necessário
+    if database_url and "@localhost" in database_url:
+        database_url = database_url.replace("@localhost", "@trendpulse-db.internal")
+        logger.info(f"URL ajustada para ambiente Render (localhost -> trendpulse-db.internal): {database_url}")
     
-    except Exception as e:
-        logger.error(f"Erro ao conectar ao banco de dados: {str(e)}")
-        logger.error(f"URL do banco: {database_url}")
-        return False
+    # Lista de URLs para tentar
+    urls_to_try = [
+        database_url,
+        database_url.replace("@localhost", "@trendpulse-db.internal") if database_url and "@localhost" in database_url else None,
+        database_url.replace("@mysql", "@trendpulse-db.internal") if database_url and "@mysql" in database_url else None,
+        database_url.replace("@trendpulse-db", "@trendpulse-db.internal") if database_url and "@trendpulse-db" in database_url else None,
+    ]
+    
+    # Remover None e duplicatas
+    urls_to_try = [url for url in urls_to_try if url]
+    urls_to_try = list(dict.fromkeys(urls_to_try))
+    
+    for url in urls_to_try:
+        try:
+            logger.info(f"Tentando conectar ao banco de dados com URL: {url}")
+            engine = create_engine(url)
+            
+            # Tenta conectar e executar uma consulta simples
+            with engine.connect() as connection:
+                result = connection.execute(text("SELECT 1"))
+                logger.info(f"Conexão bem-sucedida! Resultado: {result.fetchone()}")
+                
+                # Verifica informações do banco de dados
+                try:
+                    db_info = connection.execute(text("SELECT VERSION()"))
+                    logger.info(f"Versão do banco de dados: {db_info.fetchone()}")
+                except Exception as e:
+                    logger.warning(f"Não foi possível obter a versão do banco: {str(e)}")
+                
+                # Se a URL for diferente da original, atualizar a variável de ambiente
+                if url != database_url:
+                    logger.info(f"Atualizando variável de ambiente para usar a URL do banco de dados: {url}")
+                    os.environ['DATABASE_URL'] = url
+                
+            return True
+        
+        except Exception as e:
+            logger.error(f"Erro ao conectar ao banco de dados com URL {url}: {str(e)}")
+    
+    logger.error(f"Não foi possível conectar ao banco de dados com nenhuma das URLs tentadas")
+    return False
 
 if __name__ == "__main__":
     # Configuração dos argumentos de linha de comando

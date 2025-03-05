@@ -6,7 +6,6 @@ services:
     dockerfilePath: ./Dockerfile
     plan: free
     healthCheckPath: /api/status
-    buildCommand: pip install -r requirements.txt
     envVars:
       - key: DATABASE_URL
         fromDatabase:
@@ -49,7 +48,6 @@ services:
     env: docker
     dockerfilePath: ./Dockerfile
     plan: free
-    buildCommand: pip install -r requirements.txt
     envVars:
       - key: CELERY_BROKER_URL
         fromService:
@@ -74,7 +72,6 @@ services:
     env: docker
     dockerfilePath: ./Dockerfile
     plan: free
-    buildCommand: pip install -r requirements.txt
     envVars:
       - key: DATABASE_URL
         fromDatabase:
@@ -113,7 +110,6 @@ services:
     env: docker
     dockerfilePath: ./Dockerfile
     plan: free
-    buildCommand: pip install -r requirements.txt
     envVars:
       - key: DATABASE_URL
         fromDatabase:
@@ -148,7 +144,3 @@ services:
     name: trendpulse-db
     env: docker
     plan: free
-    disk:
-      name: data
-      mountPath: /var/lib/mysql
-      sizeGB: 5

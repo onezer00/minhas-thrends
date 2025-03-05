@@ -18,7 +18,7 @@ CELERY_RESULT_BACKEND = os.getenv("CELERY_RESULT_BACKEND", "redis://redis:6379/0
 
 # Cria a instância do Celery
 celery = Celery(
-    "aggregator_backend",
+    "app",
     broker=CELERY_BROKER_URL,
     backend=CELERY_RESULT_BACKEND,
 )
@@ -65,31 +65,31 @@ celery.conf.update(
 celery.conf.beat_schedule = {
     # Tarefa principal para buscar todas as tendências a cada 2 horas
     "fetch-all-trends-every-2-hours": {
-        "task": "aggregator_backend.tasks.fetch_all_trends",
+        "task": "app.tasks.fetch_all_trends",
         "schedule": crontab(minute=0, hour="*/2"),
     },
     # Tarefas específicas para cada plataforma
     "update-twitter-every-3-hours": {
-        "task": "aggregator_backend.tasks.fetch_twitter_trends",
+        "task": "app.tasks.fetch_twitter_trends",
         "schedule": crontab(minute=0, hour="*/3"),
     },
     "update-youtube-every-3-hours": {
-        "task": "aggregator_backend.tasks.fetch_youtube_trends",
+        "task": "app.tasks.fetch_youtube_trends",
         "schedule": crontab(minute=0, hour="*/3"),
     },
     "update-reddit-every-2-hours": {
-        "task": "aggregator_backend.tasks.fetch_reddit_trends",
+        "task": "app.tasks.fetch_reddit_trends",
         "schedule": crontab(minute=30, hour="*/2"),
     },
     # Limpeza de tendências antigas uma vez por dia
     "clean-old-trends-daily": {
-        "task": "aggregator_backend.tasks.clean_old_trends",
+        "task": "app.tasks.clean_old_trends",
         "schedule": crontab(minute=0, hour=3),  # 3 AM
     },
 }
 
 # Configura os pacotes onde o Celery deve procurar por tasks
-celery.autodiscover_tasks(['aggregator_backend'])
+celery.autodiscover_tasks(['app'])
 
 # Verifica se o banco de dados está vazio na inicialização
 @celery.on_after_configure.connect
@@ -100,7 +100,7 @@ def setup_initial_tasks(sender, **kwargs):
     """
     try:
         # Importa os modelos e conexão com o banco
-        from aggregator_backend.models import SessionLocal, Trend
+        from app.models import SessionLocal, Trend
         
         # Cria uma sessão
         db = SessionLocal()
@@ -114,7 +114,7 @@ def setup_initial_tasks(sender, **kwargs):
         if trend_count == 0:
             logger.info("Banco de dados vazio. Iniciando busca inicial de tendências...")
             # Dispara as tarefas de busca de tendências imediatamente
-            from aggregator_backend.tasks import fetch_all_trends
+            from app.tasks import fetch_all_trends
             fetch_all_trends.delay()
         else:
             logger.info(f"Banco de dados contém {trend_count} tendências. Seguindo agendamento normal.")

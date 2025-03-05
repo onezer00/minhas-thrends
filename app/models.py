@@ -36,8 +36,11 @@ else:
         
         # Substitui localhost pelo nome do serviço no Render se necessário
         if "@localhost" in DATABASE_URL:
-            DATABASE_URL = DATABASE_URL.replace("@localhost", "@mysql")
-            logger.info(f"URL ajustada para ambiente Render (localhost -> mysql): {DATABASE_URL}")
+            DATABASE_URL = DATABASE_URL.replace("@localhost", "@trendpulse-db.internal")
+            logger.info(f"URL ajustada para ambiente Render (localhost -> trendpulse-db.internal): {DATABASE_URL}")
+        elif "@mysql" in DATABASE_URL:
+            DATABASE_URL = DATABASE_URL.replace("@mysql", "@trendpulse-db.internal")
+            logger.info(f"URL ajustada para ambiente Render (mysql -> trendpulse-db.internal): {DATABASE_URL}")
 
 # Tenta criar o engine com tratamento de erro
 try:
