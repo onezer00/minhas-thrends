@@ -12,6 +12,16 @@ from celery.signals import task_prerun
 from celery.schedules import crontab
 import redis
 
+# Configuração para o Flower usar menos conexões ao Redis
+os.environ['FLOWER_PERSISTENT'] = 'False'  # Desativa persistência para reduzir conexões
+os.environ['FLOWER_BROKER_API'] = ''  # Desativa API do broker para reduzir conexões
+os.environ['FLOWER_PORT'] = os.environ.get('PORT', '5555')  # Usa a porta definida pelo Render
+os.environ['FLOWER_BASIC_AUTH'] = os.environ.get('FLOWER_BASIC_AUTH', '')  # Autenticação básica
+os.environ['FLOWER_PURGE_OFFLINE_WORKERS'] = '60'  # Remove workers offline após 60 segundos
+os.environ['FLOWER_DB'] = ''  # Desativa banco de dados do Flower
+os.environ['FLOWER_MAX_WORKERS'] = '3'  # Limita o número de workers
+os.environ['FLOWER_MAX_TASKS'] = '10000'  # Limita o número de tarefas armazenadas
+
 # Configuração de logging
 logging.basicConfig(
     level=logging.INFO,
