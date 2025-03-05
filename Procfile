@@ -1,4 +1,4 @@
-web: python -m aggregator_backend.check_db --max-attempts 10 --wait-time 10 && python -c 'from aggregator_backend.models import create_tables; create_tables()' && uvicorn aggregator_backend.main:app --host 0.0.0.0 --port $PORT
-worker: python -m aggregator_backend.check_db --max-attempts 10 --wait-time 10 && celery -A aggregator_backend.tasks worker --loglevel=info
-beat: python -m aggregator_backend.check_db --max-attempts 10 --wait-time 10 && celery -A aggregator_backend.tasks beat --loglevel=info
-flower: python -m aggregator_backend.check_db --max-attempts 10 --wait-time 10 --skip-db && celery -A aggregator_backend.tasks flower --port=$PORT 
+web: python -m app.check_db --max-attempts 10 --wait-time 10 && python -c 'from app.models import create_tables; create_tables()' && uvicorn app.main:app --host 0.0.0.0 --port $PORT
+worker: python -m app.check_db --max-attempts 10 --wait-time 10 && celery -A app.tasks worker --loglevel=info
+beat: python -m app.check_db --max-attempts 10 --wait-time 10 && celery -A app.tasks beat --loglevel=info
+flower: python -m app.check_db --max-attempts 10 --wait-time 10 --skip-db && celery -A app.tasks flower --port=$PORT 

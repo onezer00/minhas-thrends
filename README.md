@@ -85,7 +85,7 @@ GITHUB_PAGES_URL=https://seu-usuario.github.io
 
 ```bash
 trendpulse/
-├── aggregator_backend/
+├── app/
 │   ├── __init__.py
 │   ├── main.py               # API FastAPI
 │   ├── celery_app.py         # Configuração do Celery
@@ -121,7 +121,7 @@ No modo desenvolvimento, a API roda localmente (fora do Docker) para facilitar o
 
 3. Execute a API localmente:
    ```bash
-   uvicorn aggregator_backend.main:app --reload --host 0.0.0.0 --port 8000
+   uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
    ```
 
 ### Modo Produção
@@ -235,7 +235,7 @@ Acesse o dashboard do Flower em `http://localhost:5555` para monitorar:
 1. **Erro de Conexão com MySQL:**
    - Verifique se o container do MySQL está rodando: `docker-compose ps`
    - Verifique os logs: `docker-compose logs mysql`
-   - Execute o script de diagnóstico: `python -m aggregator_backend.check_db`
+   - Execute o script de diagnóstico: `python -m app.check_db`
 
 2. **Tasks Não Executando:**
    - Verifique os logs do worker: `docker-compose logs worker`
@@ -256,7 +256,20 @@ Acesse o dashboard do Flower em `http://localhost:5555` para monitorar:
    - O sistema agora tem um fallback automático para SQLite em caso de falha na conexão com MySQL
    - Em desenvolvimento, ele usará um arquivo SQLite no diretório temporário
    - Em último caso, usará SQLite em memória (os dados serão perdidos ao reiniciar)
-   - Para diagnosticar problemas de conexão: `python -m aggregator_backend.check_db --max-attempts 5 --wait-time 10`
+   - Para diagnosticar problemas de conexão: `python -m app.check_db --max-attempts 5 --wait-time 10`
+
+6. **Problemas com o Redis:**
+   - O sistema tentará automaticamente ajustar a URL do Redis para usar o nome completo do serviço no Render
+   - Você pode verificar a conexão manualmente com: `python -m app.check_db --skip-db`
+
+7. **Problemas de CORS:**
+   - Verifique se a variável `GITHUB_PAGES_URL` está configurada corretamente
+   - Em produção, apenas requisições desse domínio serão aceitas
+
+8. **Diagnóstico avançado:**
+   - Adicione a variável de ambiente `PYTHONUNBUFFERED=1` para ver logs em tempo real
+   - Execute o script de diagnóstico com mais tentativas: `python -m app.check_db --max-attempts 10 --wait-time 15`
+   - Verifique os logs do sistema para erros específicos
 
 ## Deploy no Render.com
 
@@ -318,7 +331,7 @@ Se encontrar problemas durante o deploy no Render, verifique:
 2. **Erro de conexão com o Redis**:
    - Se encontrar erros como `'NoneType' object has no attribute 'push'` ou `Name or service not known`
    - O sistema tentará automaticamente ajustar a URL do Redis para usar o nome completo do serviço no Render
-   - Você pode verificar a conexão manualmente com: `python -m aggregator_backend.check_db --skip-db`
+   - Você pode verificar a conexão manualmente com: `python -m app.check_db --skip-db`
    - Se o problema persistir, reinicie o serviço Redis no dashboard do Render
 
 3. **Erro de porta**:
@@ -340,7 +353,7 @@ Se encontrar problemas durante o deploy no Render, verifique:
 
 7. **Diagnóstico avançado**:
    - Adicione a variável de ambiente `PYTHONUNBUFFERED=1` para ver logs em tempo real
-   - Execute o script de diagnóstico com mais tentativas: `python -m aggregator_backend.check_db --max-attempts 10 --wait-time 15`
+   - Execute o script de diagnóstico com mais tentativas: `python -m app.check_db --max-attempts 10 --wait-time 15`
    - Verifique os logs do sistema para erros específicos
 
 8. **Problemas com Celery**:

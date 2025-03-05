@@ -6,8 +6,8 @@ import requests.auth
 from datetime import datetime, timedelta
 import logging
 from sqlalchemy import func
-from aggregator_backend.models import SessionLocal, Trend, TrendTag, AggregatedContent
-from aggregator_backend.celery_app import celery
+from app.models import SessionLocal, Trend, TrendTag, AggregatedContent
+from app.celery_app import celery
 from celery.signals import task_prerun
 from celery.schedules import crontab
 import redis
@@ -23,25 +23,25 @@ logger = logging.getLogger(__name__)
 celery.conf.beat_schedule = {
     # Tarefa principal para buscar todas as tendências a cada 2 horas
     "fetch-all-trends-every-2-hours": {
-        "task": "aggregator_backend.tasks.fetch_all_trends",
+        "task": "app.tasks.fetch_all_trends",
         "schedule": crontab(minute=0, hour="*/2"),
     },
     # Tarefas específicas para cada plataforma
     "update-twitter-every-3-hours": {
-        "task": "aggregator_backend.tasks.fetch_twitter_trends",
+        "task": "app.tasks.fetch_twitter_trends",
         "schedule": crontab(minute=0, hour="*/3"),
     },
     "update-youtube-every-3-hours": {
-        "task": "aggregator_backend.tasks.fetch_youtube_trends",
+        "task": "app.tasks.fetch_youtube_trends",
         "schedule": crontab(minute=0, hour="*/3"),
     },
     "update-reddit-every-2-hours": {
-        "task": "aggregator_backend.tasks.fetch_reddit_trends",
+        "task": "app.tasks.fetch_reddit_trends",
         "schedule": crontab(minute=30, hour="*/2"),
     },
     # Limpeza de tendências antigas uma vez por dia
     "clean-old-trends-daily": {
-        "task": "aggregator_backend.tasks.clean_old_trends",
+        "task": "app.tasks.clean_old_trends",
         "schedule": crontab(minute=0, hour=3),  # 3 AM
     },
 }

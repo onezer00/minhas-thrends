@@ -27,7 +27,7 @@ services:
         condition: service_healthy
     profiles:
       - production
-    command: uvicorn aggregator_backend.main:app --host 0.0.0.0 --port 8000
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000
 
   # MySQL
   mysql:
@@ -76,7 +76,7 @@ services:
       /bin/bash -c "
         echo 'Aguardando MySQL...' &&
         sleep 10 &&
-        cd /app && python -c 'from aggregator_backend.models import create_tables; create_tables()'
+        cd /app && python -c 'from app.models import create_tables; create_tables()'
       "
     environment:
       - DATABASE_URL=mysql+pymysql://root:root@mysql:3306/trendpulse
@@ -90,7 +90,7 @@ services:
   worker:
     build: .
     container_name: trendpulse_worker
-    command: celery -A aggregator_backend.tasks worker --loglevel=info
+    command: celery -A app.tasks worker --loglevel=info
     environment:
       - DATABASE_URL=mysql+pymysql://root:root@mysql:3306/trendpulse
       - CELERY_BROKER_URL=redis://redis:6379/0
@@ -114,7 +114,7 @@ services:
   beat:
     build: .
     container_name: trendpulse_beat
-    command: celery -A aggregator_backend.tasks beat --loglevel=info
+    command: celery -A app.tasks beat --loglevel=info
     environment:
       - DATABASE_URL=mysql+pymysql://root:root@mysql:3306/trendpulse
       - CELERY_BROKER_URL=redis://redis:6379/0
@@ -133,7 +133,7 @@ services:
   flower:
     build: .
     container_name: trendpulse_flower
-    command: celery -A aggregator_backend.tasks flower --port=5555
+    command: celery -A app.tasks flower --port=5555
     ports:
       - "5555:5555"
     volumes:

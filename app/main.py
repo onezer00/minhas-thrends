@@ -6,8 +6,9 @@ from typing import List, Optional
 from datetime import datetime
 import logging
 import os
-from aggregator_backend.models import get_db, Trend, create_tables
-from aggregator_backend.tasks import fetch_all_trends
+from app.models import get_db, Trend, create_tables
+from app.tasks import fetch_all_trends
+from app.check_db import check_redis_connection
 
 # Configuração de logging
 logging.basicConfig(
@@ -139,8 +140,6 @@ async def status():
     Endpoint para verificar o status da API e suas dependências.
     Usado pelo Render.com para healthcheck.
     """
-    from aggregator_backend.check_db import check_redis_connection
-    
     redis_ok = check_redis_connection()
     
     # Verificar conexão com o banco de dados
