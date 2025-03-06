@@ -96,9 +96,9 @@ GITHUB_PAGES_URL=https://seu-usuario.github.io
 O projeto está configurado para usar diferentes bancos de dados dependendo do ambiente:
 
 #### Ambiente de Desenvolvimento
-- **MySQL**: Usado localmente durante o desenvolvimento
-- String de conexão: `mysql+pymysql://root:root@mysql:3306/trendpulse` (dentro do Docker)
-- String de conexão: `mysql+pymysql://root:root@localhost:3307/trendpulse` (fora do Docker)
+- **PostgreSQL**: Usado localmente durante o desenvolvimento
+- String de conexão: `postgresql://postgres:posgtgres123@postgres:5432/trendpulse` (dentro do Docker)
+- String de conexão: `postgresql://postgres:posgtgres123@localhost:5432/trendpulse` (fora do Docker)
 
 #### Ambiente de Produção (Render)
 - **PostgreSQL**: Usado em produção no Render
@@ -106,14 +106,14 @@ O projeto está configurado para usar diferentes bancos de dados dependendo do a
 - O sistema detecta automaticamente o ambiente e ajusta a conexão
 
 #### Fallback
-- **SQLite**: Usado como fallback em caso de falha na conexão com MySQL/PostgreSQL
+- **SQLite**: Usado como fallback em caso de falha na conexão com PostgreSQL
 - Localização: Diretório temporário do sistema ou em memória como último recurso
 
 ### Dependências de Banco de Dados
 
 O projeto inclui drivers para ambos os bancos de dados:
-- `pymysql` e `mysqlclient` para MySQL
 - `psycopg2-binary` para PostgreSQL
+- `sqlite3` (embutido no Python) para SQLite como fallback
 
 O sistema detecta automaticamente qual driver usar com base na string de conexão.
 

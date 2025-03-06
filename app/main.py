@@ -399,17 +399,15 @@ def get_config():
 
 
 @app.get("/api/database/stats", response_model=Dict[str, Any])
-async def get_database_stats():
+async def get_database_stats(db: Session = Depends(get_db)):
     """
     Retorna estatísticas sobre o uso do banco de dados.
     Inclui tamanho total do banco, tamanho das tabelas e contagem de registros.
     """
     from sqlalchemy import text, func
-    from app.tasks import get_db_session
     from app.models import Trend
     import os
     
-    db = get_db_session()
     try:
         # Detecta o tipo de banco de dados
         db_url = os.getenv("DATABASE_URL", "").lower()
@@ -575,8 +573,6 @@ async def get_database_stats():
     except Exception as e:
         logger.error(f"Erro ao obter estatísticas do banco de dados: {e}")
         return {"error": str(e)}
-    finally:
-        db.close()
 
 
 @app.post("/api/database/cleanup", response_model=Dict[str, Any])

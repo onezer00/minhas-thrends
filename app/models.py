@@ -44,19 +44,11 @@ else:
                 DATABASE_URL = DATABASE_URL.replace("@localhost", "@trendpulse-db.internal")
                 logger.info(f"URL ajustada para ambiente Render (localhost -> trendpulse-db.internal): {DATABASE_URL}")
     else:
-        logger.info("Ambiente de desenvolvimento detectado, verificando configuração para MySQL")
-        
-        # Para MySQL em desenvolvimento
-        if "mysql" in DATABASE_URL:
-            # Verifica se precisamos adicionar o driver pymysql
-            if "pymysql" not in DATABASE_URL and "mysql://" in DATABASE_URL:
-                DATABASE_URL = DATABASE_URL.replace("mysql://", "mysql+pymysql://")
-                logger.info(f"URL ajustada para usar pymysql: {DATABASE_URL}")
-            
-            # Substitui localhost pelo nome do serviço no Docker Compose se necessário
-            if "@localhost" in DATABASE_URL:
-                DATABASE_URL = DATABASE_URL.replace("@localhost", "@mysql")
-                logger.info(f"URL ajustada para ambiente Docker (localhost -> mysql): {DATABASE_URL}")
+        logger.info("Ambiente de desenvolvimento detectado")
+        # Para PostgreSQL local
+        if "postgres" in DATABASE_URL and "@localhost" in DATABASE_URL and "docker" in os.environ.get("ENVIRONMENT_CONTEXT", ""):
+            DATABASE_URL = DATABASE_URL.replace("@localhost", "@postgres")
+            logger.info(f"URL ajustada para ambiente Docker (localhost -> postgres): {DATABASE_URL}")
 
 # Tenta criar o engine com tratamento de erro
 try:
@@ -86,7 +78,7 @@ except Exception as e:
     # Em caso de falha, tenta um fallback mais simples para SQLite em memória
     logger.warning("Tentando fallback para SQLite em memória...")
     DATABASE_URL = "sqlite:///:memory:"
-    engine = create_engine(DATABASE_URL)
+    engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
     logger.info("Usando SQLite em memória como último recurso")
 
 # Cria a fábrica de sessões
@@ -233,4 +225,7 @@ def get_db():
     try:
         yield db
     finally:
-        db.close()
+        try:
+            db.close()
+        except Exception as e:
+            logger.warning(f"Erro ao fechar conexão com o banco: {str(e)}")
