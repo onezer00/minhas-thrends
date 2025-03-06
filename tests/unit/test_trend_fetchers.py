@@ -14,15 +14,13 @@ pytestmark = pytest.mark.unit
 class TestYouTubeTrendFetcher(unittest.TestCase):
     """Testes para o fetcher de tendências do YouTube."""
     
-    @patch('app.tasks.SessionLocal')
-    def test_fetch_youtube_trends_success(self, mock_session_local):
+    def test_fetch_youtube_trends_success(self):
         """Testa a busca de tendências do YouTube com sucesso."""
-        # Configurar o mock da sessão do banco de dados
+        # Mock para a sessão do banco de dados
         mock_session = MagicMock()
-        mock_session_local.return_value = mock_session
+        mock_session_local = MagicMock(return_value=mock_session)
         
-        # Configurar o mock para build
-        mock_build = MagicMock()
+        # Mock para o serviço YouTube
         mock_youtube = MagicMock()
         mock_videos = MagicMock()
         mock_list = MagicMock()
@@ -57,7 +55,7 @@ class TestYouTubeTrendFetcher(unittest.TestCase):
         mock_list.execute = mock_execute
         mock_videos.list.return_value = mock_list
         mock_youtube.videos.return_value = mock_videos
-        mock_build.return_value = mock_youtube
+        mock_build = MagicMock(return_value=mock_youtube)
         
         # Configurar o mock para simular que o vídeo não existe no banco
         mock_query = MagicMock()
@@ -68,8 +66,10 @@ class TestYouTubeTrendFetcher(unittest.TestCase):
         mock_query.filter = mock_filter
         mock_session.query.return_value = mock_query
         
-        # Patch interno para build
-        with patch('app.tasks.build', mock_build):
+        # Patch das funções necessárias
+        with patch('app.tasks.SessionLocal', mock_session_local), \
+             patch('googleapiclient.discovery.build', mock_build):
+            
             # Executar a função
             result = fetch_youtube_trends()
             
@@ -80,14 +80,18 @@ class TestYouTubeTrendFetcher(unittest.TestCase):
             self.assertTrue(mock_session.add.called)
             self.assertTrue(mock_session.commit.called)
     
-    @patch('app.tasks.SessionLocal')
-    def test_fetch_youtube_trends_error(self, mock_session_local):
+    def test_fetch_youtube_trends_error(self):
         """Testa a busca de tendências do YouTube com erro."""
+        # Mock para a sessão do banco de dados
+        mock_session_local = MagicMock()
+        
         # Simular um erro na API
         mock_build = MagicMock(side_effect=Exception("API Error"))
         
-        # Patch interno para build
-        with patch('app.tasks.build', mock_build):
+        # Patch das funções necessárias
+        with patch('app.tasks.SessionLocal', mock_session_local), \
+             patch('googleapiclient.discovery.build', mock_build):
+            
             # Executar a função
             result = fetch_youtube_trends()
             
@@ -97,15 +101,13 @@ class TestYouTubeTrendFetcher(unittest.TestCase):
             # Verificar que nenhum dado foi salvo no banco de dados
             mock_session_local.assert_not_called()
     
-    @patch('app.tasks.SessionLocal')
-    def test_fetch_youtube_trends_empty(self, mock_session_local):
+    def test_fetch_youtube_trends_empty(self):
         """Testa a busca de tendências do YouTube com resposta vazia."""
-        # Configurar o mock da sessão do banco de dados
+        # Mock para a sessão do banco de dados
         mock_session = MagicMock()
-        mock_session_local.return_value = mock_session
+        mock_session_local = MagicMock(return_value=mock_session)
         
-        # Configurar o mock para build
-        mock_build = MagicMock()
+        # Mock para o serviço YouTube
         mock_youtube = MagicMock()
         mock_videos = MagicMock()
         mock_list = MagicMock()
@@ -118,10 +120,12 @@ class TestYouTubeTrendFetcher(unittest.TestCase):
         mock_list.execute = mock_execute
         mock_videos.list = MagicMock(return_value=mock_list)
         mock_youtube.videos = mock_videos
-        mock_build.return_value = mock_youtube
+        mock_build = MagicMock(return_value=mock_youtube)
         
-        # Patch interno para build
-        with patch('app.tasks.build', mock_build):
+        # Patch das funções necessárias
+        with patch('app.tasks.SessionLocal', mock_session_local), \
+             patch('googleapiclient.discovery.build', mock_build):
+            
             # Executar a função
             result = fetch_youtube_trends()
             
@@ -134,15 +138,13 @@ class TestYouTubeTrendFetcher(unittest.TestCase):
 class TestRedditTrendFetcher(unittest.TestCase):
     """Testes para o fetcher de tendências do Reddit."""
     
-    @patch('app.tasks.SessionLocal')
-    def test_fetch_reddit_trends_success(self, mock_session_local):
+    def test_fetch_reddit_trends_success(self):
         """Testa a busca de tendências do Reddit com sucesso."""
-        # Configurar o mock da sessão do banco de dados
+        # Mock para a sessão do banco de dados
         mock_session = MagicMock()
-        mock_session_local.return_value = mock_session
+        mock_session_local = MagicMock(return_value=mock_session)
         
-        # Configurar o mock para Reddit
-        mock_reddit_class = MagicMock()
+        # Mock para o cliente Reddit
         mock_reddit = MagicMock()
         mock_subreddit = MagicMock()
         
@@ -162,7 +164,7 @@ class TestRedditTrendFetcher(unittest.TestCase):
         # Configurar a cadeia de chamadas
         mock_subreddit.hot.return_value = [mock_post]
         mock_reddit.subreddit.return_value = mock_subreddit
-        mock_reddit_class.return_value = mock_reddit
+        mock_reddit_class = MagicMock(return_value=mock_reddit)
         
         # Configurar o mock para simular que o post não existe no banco
         mock_query = MagicMock()
@@ -173,8 +175,10 @@ class TestRedditTrendFetcher(unittest.TestCase):
         mock_query.filter = mock_filter
         mock_session.query.return_value = mock_query
         
-        # Patch interno para Reddit
-        with patch('app.tasks.praw.Reddit', mock_reddit_class):
+        # Patch das funções necessárias
+        with patch('app.tasks.SessionLocal', mock_session_local), \
+             patch('praw.Reddit', mock_reddit_class):
+            
             # Executar a função
             result = fetch_reddit_trends()
             
@@ -185,14 +189,18 @@ class TestRedditTrendFetcher(unittest.TestCase):
             self.assertTrue(mock_session.add.called)
             self.assertTrue(mock_session.commit.called)
     
-    @patch('app.tasks.SessionLocal')
-    def test_fetch_reddit_trends_error(self, mock_session_local):
+    def test_fetch_reddit_trends_error(self):
         """Testa a busca de tendências do Reddit com erro."""
+        # Mock para a sessão do banco de dados
+        mock_session_local = MagicMock()
+        
         # Simular um erro na API
         mock_reddit_class = MagicMock(side_effect=Exception("API Error"))
         
-        # Patch interno para Reddit
-        with patch('app.tasks.praw.Reddit', mock_reddit_class):
+        # Patch das funções necessárias
+        with patch('app.tasks.SessionLocal', mock_session_local), \
+             patch('praw.Reddit', mock_reddit_class):
+            
             # Executar a função
             result = fetch_reddit_trends()
             
@@ -202,25 +210,25 @@ class TestRedditTrendFetcher(unittest.TestCase):
             # Verificar que nenhum dado foi salvo no banco de dados
             mock_session_local.assert_not_called()
     
-    @patch('app.tasks.SessionLocal')
-    def test_fetch_reddit_trends_empty(self, mock_session_local):
+    def test_fetch_reddit_trends_empty(self):
         """Testa a busca de tendências do Reddit com resposta vazia."""
-        # Configurar o mock da sessão do banco de dados
+        # Mock para a sessão do banco de dados
         mock_session = MagicMock()
-        mock_session_local.return_value = mock_session
+        mock_session_local = MagicMock(return_value=mock_session)
         
-        # Configurar o mock para Reddit
-        mock_reddit_class = MagicMock()
+        # Mock para o cliente Reddit
         mock_reddit = MagicMock()
         mock_subreddit = MagicMock()
         
         # Configurar a resposta vazia da API
         mock_subreddit.hot.return_value = []
         mock_reddit.subreddit.return_value = mock_subreddit
-        mock_reddit_class.return_value = mock_reddit
+        mock_reddit_class = MagicMock(return_value=mock_reddit)
         
-        # Patch interno para Reddit
-        with patch('app.tasks.praw.Reddit', mock_reddit_class):
+        # Patch das funções necessárias
+        with patch('app.tasks.SessionLocal', mock_session_local), \
+             patch('praw.Reddit', mock_reddit_class):
+            
             # Executar a função
             result = fetch_reddit_trends()
             
