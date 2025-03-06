@@ -1,5 +1,11 @@
 # TrendPulse - Agregador de Tendências
 
+[![Tests](https://github.com/onezer00/minhas-thrends/actions/workflows/test.yml/badge.svg)](https://github.com/onezer00/minhas-thrends/actions/workflows/test.yml)
+[![codecov](https://codecov.io/gh/onezer00/minhas-thrends/branch/main/graph/badge.svg)](https://codecov.io/gh/onezer00/minhas-thrends)
+[![Python 3.9](https://img.shields.io/badge/python-3.9-blue.svg)](https://www.python.org/downloads/release/python-390/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.95.0-009688.svg?style=flat&logo=FastAPI&logoColor=white)](https://fastapi.tiangolo.com)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
 O **TrendPulse** é um projeto que agrega conteúdo de diversas plataformas (YouTube e Reddit) e o disponibiliza por meio de uma API RESTful. A aplicação utiliza:
 
 - **FastAPI** para criar a API
@@ -266,26 +272,11 @@ O TrendPulse possui uma suíte completa de testes automatizados, incluindo teste
 
 Você pode executar os testes de várias maneiras:
 
-#### Usando o script run_tests.py
+#### Usando o script pre_deploy_tests.sh
 
 ```bash
-# Executar todos os testes
-python run_tests.py
-
-# Executar apenas testes unitários
-python run_tests.py --unit
-
-# Executar apenas testes de integração
-python run_tests.py --integration
-
-# Gerar relatório de cobertura
-python run_tests.py --coverage
-
-# Gerar relatório de cobertura em HTML
-python run_tests.py --coverage --html
-
-# Executar verificações de pré-commit
-python run_tests.py --pre-commit
+# Executar todos os testes e gerar relatório de cobertura
+bash ./pre_deploy_tests.sh
 ```
 
 #### Usando pytest diretamente
@@ -302,8 +293,6 @@ pytest -m integration
 pytest --cov=app tests/
 ```
 
-Para mais detalhes sobre os testes, consulte o [README dos testes](tests/README.md).
-
 ### Integração Contínua
 
 O projeto utiliza GitHub Actions para executar os testes automaticamente a cada push ou pull request. O fluxo de trabalho está configurado em `.github/workflows/test.yml` e inclui:
@@ -312,6 +301,12 @@ O projeto utiliza GitHub Actions para executar os testes automaticamente a cada 
 2. Geração de relatório de cobertura
 3. Upload do relatório para o Codecov
 4. Notificação para o Render para deploy (apenas na branch principal)
+
+### Cobertura de Código
+
+A cobertura de código é monitorada pelo [Codecov](https://codecov.io/gh/onezer00/minhas-thrends). O badge no topo do README mostra a cobertura atual. O objetivo é manter a cobertura acima de 60%.
+
+Você pode ver o relatório detalhado de cobertura clicando no badge do Codecov ou acessando diretamente o [dashboard do Codecov](https://codecov.io/gh/onezer00/minhas-thrends).
 
 ### Pré-commit
 
@@ -329,7 +324,6 @@ Os hooks do pre-commit verificam:
 - Formatação do código (black)
 - Ordenação de imports (isort)
 - Estilo de código (flake8)
-- Verificação de tipos (mypy)
 - Execução de testes unitários
 
 ## Troubleshooting
