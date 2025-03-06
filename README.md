@@ -23,6 +23,10 @@ Este projeto foi estruturado para rodar todos os serviços via Docker Compose, g
   - [Modo Produção](#modo-produção)
 - [API Endpoints](#api-endpoints)
 - [Monitoramento com Flower](#monitoramento-com-flower)
+- [Testes Automatizados](#testes-automatizados)
+  - [Executando Testes](#executando-testes)
+  - [Integração Contínua](#integração-contínua)
+  - [Pré-commit](#pré-commit)
 - [Troubleshooting](#troubleshooting)
 - [Contribuições](#contribuições)
 - [Licença](#licença)
@@ -253,6 +257,80 @@ Acesse o dashboard do Flower em `http://localhost:5555` para monitorar:
 - Tasks agendadas
 - Histórico de execuções
 - Estado dos workers
+
+## Testes Automatizados
+
+O TrendPulse possui uma suíte completa de testes automatizados, incluindo testes unitários e de integração. Os testes são executados automaticamente a cada commit e antes do deploy, garantindo a qualidade do código.
+
+### Executando Testes
+
+Você pode executar os testes de várias maneiras:
+
+#### Usando o script run_tests.py
+
+```bash
+# Executar todos os testes
+python run_tests.py
+
+# Executar apenas testes unitários
+python run_tests.py --unit
+
+# Executar apenas testes de integração
+python run_tests.py --integration
+
+# Gerar relatório de cobertura
+python run_tests.py --coverage
+
+# Gerar relatório de cobertura em HTML
+python run_tests.py --coverage --html
+
+# Executar verificações de pré-commit
+python run_tests.py --pre-commit
+```
+
+#### Usando pytest diretamente
+
+```bash
+# Executar todos os testes
+pytest
+
+# Executar testes com marcador específico
+pytest -m unit
+pytest -m integration
+
+# Gerar relatório de cobertura
+pytest --cov=app tests/
+```
+
+Para mais detalhes sobre os testes, consulte o [README dos testes](tests/README.md).
+
+### Integração Contínua
+
+O projeto utiliza GitHub Actions para executar os testes automaticamente a cada push ou pull request. O fluxo de trabalho está configurado em `.github/workflows/test.yml` e inclui:
+
+1. Execução de todos os testes
+2. Geração de relatório de cobertura
+3. Upload do relatório para o Codecov
+4. Notificação para o Render para deploy (apenas na branch principal)
+
+### Pré-commit
+
+O projeto usa pre-commit para verificar o código antes de cada commit. Para configurar:
+
+```bash
+# Instalar e configurar o pre-commit
+python setup_pre_commit.py
+
+# Executar manualmente em todos os arquivos
+pre-commit run --all-files
+```
+
+Os hooks do pre-commit verificam:
+- Formatação do código (black)
+- Ordenação de imports (isort)
+- Estilo de código (flake8)
+- Verificação de tipos (mypy)
+- Execução de testes unitários
 
 ## Troubleshooting
 

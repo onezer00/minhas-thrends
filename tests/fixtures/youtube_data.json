@@ -1,0 +1,67 @@
+[
+  {
+    "title": "Novo iPhone 15 Pro - Análise Completa",
+    "url": "https://www.youtube.com/watch?v=abc123",
+    "platform": "youtube",
+    "category": "tecnologia",
+    "rank": 1,
+    "views": 1500000,
+    "likes": 75000,
+    "comments": 12000,
+    "author": "TechReviews BR",
+    "thumbnail": "https://i.ytimg.com/vi/abc123/hqdefault.jpg",
+    "published_at": "2023-09-15T14:30:00Z"
+  },
+  {
+    "title": "Como Programar em Python - Curso Completo para Iniciantes",
+    "url": "https://www.youtube.com/watch?v=def456",
+    "platform": "youtube",
+    "category": "tecnologia",
+    "rank": 2,
+    "views": 980000,
+    "likes": 65000,
+    "comments": 8500,
+    "author": "Programação Prática",
+    "thumbnail": "https://i.ytimg.com/vi/def456/hqdefault.jpg",
+    "published_at": "2023-09-10T10:15:00Z"
+  },
+  {
+    "title": "Show ao Vivo - Festival de Música 2023",
+    "url": "https://www.youtube.com/watch?v=ghi789",
+    "platform": "youtube",
+    "category": "entretenimento",
+    "rank": 3,
+    "views": 2500000,
+    "likes": 180000,
+    "comments": 25000,
+    "author": "Canal Música BR",
+    "thumbnail": "https://i.ytimg.com/vi/ghi789/hqdefault.jpg",
+    "published_at": "2023-09-18T20:00:00Z"
+  },
+  {
+    "title": "Receita de Bolo de Chocolate Fácil e Rápido",
+    "url": "https://www.youtube.com/watch?v=jkl012",
+    "platform": "youtube",
+    "category": "culinaria",
+    "rank": 4,
+    "views": 750000,
+    "likes": 45000,
+    "comments": 6000,
+    "author": "Cozinha Simples",
+    "thumbnail": "https://i.ytimg.com/vi/jkl012/hqdefault.jpg",
+    "published_at": "2023-09-12T15:45:00Z"
+  },
+  {
+    "title": "Notícias da Semana - Resumo Completo",
+    "url": "https://www.youtube.com/watch?v=mno345",
+    "platform": "youtube",
+    "category": "noticias",
+    "rank": 5,
+    "views": 1200000,
+    "likes": 35000,
+    "comments": 18000,
+    "author": "Jornal Digital",
+    "thumbnail": "https://i.ytimg.com/vi/mno345/hqdefault.jpg",
+    "published_at": "2023-09-17T18:30:00Z"
+  }
+] 
