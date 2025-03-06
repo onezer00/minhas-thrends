@@ -1,4 +1,4 @@
-version: '3.8'
+﻿version: '3.8'
 
 services:
   # API FastAPI
@@ -8,7 +8,7 @@ services:
     ports:
       - "8000:8000"
     environment:
-      - DATABASE_URL=mysql+pymysql://root:root@mysql:3306/trendpulse
+      - DATABASE_URL=postgresql://postgres:posgtgres123@postgres:5432/trendpulse
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
       - ENVIRONMENT=${ENVIRONMENT:-production}
@@ -21,7 +21,7 @@ services:
     volumes:
       - .:/app
     depends_on:
-      mysql:
+      postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
@@ -29,19 +29,20 @@ services:
       - production
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000
 
-  # MySQL
-  mysql:
-    image: mysql:8.0
-    container_name: trendpulse_mysql
+  # PostgreSQL
+  postgres:
+    image: postgres:15
+    container_name: trendpulse_postgres
     ports:
-      - "3307:3306"
+      - "5432:5432"
     environment:
-      - MYSQL_ROOT_PASSWORD=root
-      - MYSQL_DATABASE=trendpulse
+      - POSTGRES_PASSWORD=posgtgres123
+      - POSTGRES_USER=postgres
+      - POSTGRES_DB=trendpulse
     volumes:
-      - mysql_data:/var/lib/mysql
+      - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-proot"]
+      test: ["CMD", "pg_isready", "-U", "postgres"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -74,16 +75,16 @@ services:
     container_name: trendpulse_migrate
     command: >
       /bin/bash -c "
-        echo 'Aguardando MySQL...' &&
+        echo 'Aguardando PostgreSQL...' &&
         sleep 10 &&
         cd /app && python -c 'from app.models import create_tables; create_tables()'
       "
     environment:
-      - DATABASE_URL=mysql+pymysql://root:root@mysql:3306/trendpulse
+      - DATABASE_URL=postgresql://postgres:posgtgres123@postgres:5432/trendpulse
     volumes:
       - .:/app
     depends_on:
-      mysql:
+      postgres:
         condition: service_healthy
 
   # Worker
@@ -92,7 +93,7 @@ services:
     container_name: trendpulse_worker
     command: celery -A app.tasks worker --loglevel=info
     environment:
-      - DATABASE_URL=mysql+pymysql://root:root@mysql:3306/trendpulse
+      - DATABASE_URL=postgresql://postgres:posgtgres123@postgres:5432/trendpulse
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
       - YOUTUBE_API_KEY=${YOUTUBE_API_KEY}
@@ -103,7 +104,7 @@ services:
     volumes:
       - .:/app
     depends_on:
-      mysql:
+      postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
@@ -116,13 +117,13 @@ services:
     container_name: trendpulse_beat
     command: celery -A app.tasks beat --loglevel=info
     environment:
-      - DATABASE_URL=mysql+pymysql://root:root@mysql:3306/trendpulse
+      - DATABASE_URL=postgresql://postgres:posgtgres123@postgres:5432/trendpulse
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
     volumes:
       - .:/app
     depends_on:
-      mysql:
+      postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
@@ -139,7 +140,7 @@ services:
     volumes:
       - .:/app
     environment:
-      - DATABASE_URL=mysql+pymysql://root:root@mysql:3306/trendpulse
+      - DATABASE_URL=postgresql://postgres:posgtgres123@postgres:5432/trendpulse
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
       - FLOWER_DB=/tmp/flower
@@ -148,5 +149,5 @@ services:
         condition: service_healthy
 
 volumes:
-  mysql_data:
+  postgres_data:
   redis_data:
