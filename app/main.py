@@ -1,14 +1,14 @@
 from fastapi import FastAPI, Depends, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
-from sqlalchemy import desc, text
+from sqlalchemy import desc, text, func
 from typing import List, Optional, Dict, Any
 from datetime import datetime, timedelta
 import logging
 import os
 import time
 from app.models import get_db, Trend, create_tables, SessionLocal
-from app.tasks import fetch_all_trends
+from app.tasks import fetch_all_trends, get_db_session
 from app.check_db import check_redis_connection
 from fastapi import BackgroundTasks
 
@@ -181,18 +181,27 @@ def get_trends(
     db: Session = Depends(get_db)
 ):
     """
-    Retorna as tendências mais recentes, com opções de filtro por plataforma e categoria.
+    Retorna as tendências mais recentes.
+    Pode ser filtrado por plataforma e categoria.
     """
-    query = db.query(Trend).order_by(desc(Trend.created_at))
-    
-    if platform:
-        query = query.filter(Trend.platform == platform)
-    
-    if category:
-        query = query.filter(Trend.category == category)
-    
-    trends = query.offset(skip).limit(limit).all()
-    return [trend.to_dict() for trend in trends]
+    try:
+        # Consulta base
+        query = db.query(Trend).order_by(desc(Trend.created_at))
+        
+        # Filtros
+        if platform:
+            query = query.filter(Trend.platform == platform)
+        if category:
+            query = query.filter(Trend.category == category)
+            
+        # Paginação
+        trends = query.offset(skip).limit(limit).all()
+        
+        # Retorna os resultados
+        return {"trends": [trend.to_dict() for trend in trends]}
+    except Exception as e:
+        logger.error(f"Erro ao buscar tendências: {str(e)}")
+        return {"trends": [], "error": str(e)}
 
 
 @app.get("/api/trends/{trend_id}")
@@ -204,36 +213,39 @@ def get_trend(trend_id: int, db: Session = Depends(get_db)):
     if not trend:
         raise HTTPException(status_code=404, detail="Tendência não encontrada")
     
-    return trend.to_dict()
+    return {"trend": trend.to_dict()}
 
 
 @app.get("/api/categories")
 def get_categories(db: Session = Depends(get_db)):
     """
-    Retorna as categorias disponíveis e o número de tendências em cada uma.
+    Retorna as categorias disponíveis e a quantidade de tendências em cada uma.
     """
-    # Consulta as categorias e conta as tendências em cada uma
-    from sqlalchemy import func
-    result = db.query(
-        Trend.category, 
-        func.count(Trend.id).label("count")
-    ).group_by(Trend.category).all()
-    
-    return [{"name": category, "count": count} for category, count in result]
+    try:
+        # Conta tendências por categoria
+        result = db.query(Trend.category, func.count(Trend.id)).group_by(Trend.category).all()
+        
+        # Formata o resultado
+        return {"categories": [{"name": category, "count": count} for category, count in result]}
+    except Exception as e:
+        logger.error(f"Erro ao buscar categorias: {str(e)}")
+        return {"categories": [], "error": str(e)}
 
 
 @app.get("/api/platforms")
 def get_platforms(db: Session = Depends(get_db)):
     """
-    Retorna as plataformas disponíveis e o número de tendências em cada uma.
+    Retorna as plataformas disponíveis e a quantidade de tendências em cada uma.
     """
-    from sqlalchemy import func
-    result = db.query(
-        Trend.platform, 
-        func.count(Trend.id).label("count")
-    ).group_by(Trend.platform).all()
-    
-    return [{"name": platform, "count": count} for platform, count in result]
+    try:
+        # Conta tendências por plataforma
+        result = db.query(Trend.platform, func.count(Trend.id)).group_by(Trend.platform).all()
+        
+        # Formata o resultado
+        return {"platforms": [{"name": platform, "count": count} for platform, count in result]}
+    except Exception as e:
+        logger.error(f"Erro ao buscar plataformas: {str(e)}")
+        return {"platforms": [], "error": str(e)}
 
 
 @app.post("/api/fetch-trends")
@@ -310,7 +322,8 @@ async def status(force_check: bool = Query(False, description="Força uma nova v
             "cache_age": int((current_time - status_cache["last_check"]).total_seconds()),
             "cache_ttl": STATUS_CACHE_TTL,
             **({"db_error": status_cache["db_error"]} if status_cache["db_error"] else {}),
-            **({"redis_error": status_cache["redis_error"]} if status_cache["redis_error"] else {})
+            **({"redis_error": status_cache["redis_error"]} if status_cache["redis_error"] else {}),
+            "version": "1.0.0"
         }
     
     # Caso contrário, faz uma nova verificação
@@ -341,12 +354,13 @@ async def status(force_check: bool = Query(False, description="Força uma nova v
     # Atualiza o cache
     status_cache = {
         "last_check": current_time,
-        "status": "ok" if status_ok else "error",
+        "timestamp": current_time.isoformat(),
         "redis": "connected" if redis_ok else "disconnected",
         "database": "connected" if db_ok else "disconnected",
-        "timestamp": current_time.isoformat(),
+        "status": "ok" if status_ok else "degraded",
         "db_error": db_error,
-        "redis_error": redis_error
+        "redis_error": redis_error,
+        "cache_ttl": STATUS_CACHE_TTL,
     }
     
     response = {
@@ -354,7 +368,8 @@ async def status(force_check: bool = Query(False, description="Força uma nova v
         "redis": status_cache["redis"],
         "database": status_cache["database"],
         "timestamp": status_cache["timestamp"],
-        "cached": False
+        "cached": False,
+        "version": "1.0.0"
     }
     
     # Adiciona detalhes do erro se houver
@@ -390,113 +405,171 @@ async def get_database_stats():
     Inclui tamanho total do banco, tamanho das tabelas e contagem de registros.
     """
     from sqlalchemy import text, func
-    from app.models import get_db_session, Trend
+    from app.tasks import get_db_session
+    from app.models import Trend
     import os
     
     db = get_db_session()
     try:
+        # Detecta o tipo de banco de dados
+        db_url = os.getenv("DATABASE_URL", "").lower()
+        
+        # Verifica o tipo de banco de dados pela URL ou pela conexão
+        if "postgres" in db_url:
+            db_type = "postgresql"
+        elif "mysql" in db_url:
+            db_type = "mysql"
+        elif "sqlite" in db_url or ":" not in db_url:
+            db_type = "sqlite"
+        else:
+            # Tenta detectar pelo dialeto da conexão
+            try:
+                dialect = db.bind.dialect.name.lower()
+                if "sqlite" in dialect:
+                    db_type = "sqlite"
+                elif "postgres" in dialect:
+                    db_type = "postgresql"
+                elif "mysql" in dialect:
+                    db_type = "mysql"
+                else:
+                    db_type = "unknown"
+            except:
+                db_type = "unknown"
+            
         stats = {
             "environment": os.getenv("ENVIRONMENT", "development"),
-            "database_type": "postgresql" if "postgres" in os.getenv("DATABASE_URL", "").lower() else "mysql",
+            "database_type": db_type,
             "tables": {},
             "total_trends": 0,
             "trends_by_platform": {},
             "oldest_trend": None,
             "newest_trend": None,
+            "database_size": {"size": 0, "unit": "bytes"}
         }
         
-        # Contagem total de tendências
-        stats["total_trends"] = db.query(func.count(Trend.id)).scalar()
-        
-        # Contagem por plataforma
-        platform_counts = db.query(Trend.platform, func.count(Trend.id)).group_by(Trend.platform).all()
-        for platform, count in platform_counts:
-            stats["trends_by_platform"][platform] = count
-        
-        # Tendência mais antiga e mais recente
-        oldest = db.query(Trend).order_by(Trend.created_at.asc()).first()
-        newest = db.query(Trend).order_by(Trend.created_at.desc()).first()
-        
-        if oldest:
-            stats["oldest_trend"] = {
-                "id": oldest.id,
-                "title": oldest.title,
-                "platform": oldest.platform,
-                "created_at": oldest.created_at.isoformat(),
-            }
-        
-        if newest:
-            stats["newest_trend"] = {
-                "id": newest.id,
-                "title": newest.title,
-                "platform": newest.platform,
-                "created_at": newest.created_at.isoformat(),
-            }
-        
-        # Estatísticas específicas por tipo de banco
-        if stats["database_type"] == "postgresql":
-            # PostgreSQL
-            db_size_query = text("""
-                SELECT pg_size_pretty(pg_database_size(current_database())) as size,
-                       pg_database_size(current_database()) as bytes
-            """)
-            result = db.execute(db_size_query).fetchone()
-            stats["database_size"] = {
-                "formatted": result.size,
-                "bytes": result.bytes
-            }
+        # Estatísticas comuns a todos os bancos
+        try:
+            stats["total_trends"] = db.query(func.count(Trend.id)).scalar()
             
-            # Tamanho das tabelas
-            table_size_query = text("""
-                SELECT 
-                    tablename as table_name,
-                    pg_size_pretty(pg_total_relation_size(quote_ident(tablename))) as size,
-                    pg_total_relation_size(quote_ident(tablename)) as bytes
-                FROM pg_tables
-                WHERE schemaname = 'public'
-                ORDER BY pg_total_relation_size(quote_ident(tablename)) DESC
-            """)
-            
-            for row in db.execute(table_size_query).fetchall():
-                stats["tables"][row.table_name] = {
-                    "size": row.size,
-                    "bytes": row.bytes
+            # Contagem por plataforma
+            platform_counts = db.query(Trend.platform, func.count(Trend.id)).group_by(Trend.platform).all()
+            stats["trends_by_platform"] = {}
+            for platform, count in platform_counts:
+                stats["trends_by_platform"][platform] = count
+                
+            # Tendência mais antiga
+            oldest_trend = db.query(Trend).order_by(Trend.created_at).first()
+            if oldest_trend:
+                stats["oldest_trend"] = {
+                    "id": oldest_trend.id,
+                    "title": oldest_trend.title,
+                    "platform": oldest_trend.platform,
+                    "created_at": oldest_trend.created_at.isoformat()
                 }
                 
-        else:
-            # MySQL
-            db_size_query = text("""
-                SELECT 
-                    table_schema as database_name,
-                    ROUND(SUM(data_length + index_length) / 1024 / 1024, 2) as size_mb,
-                    SUM(data_length + index_length) as bytes
-                FROM information_schema.TABLES 
-                WHERE table_schema = DATABASE()
-                GROUP BY table_schema
-            """)
-            result = db.execute(db_size_query).fetchone()
-            if result:
+            # Tendência mais recente
+            newest_trend = db.query(Trend).order_by(Trend.created_at.desc()).first()
+            if newest_trend:
+                stats["newest_trend"] = {
+                    "id": newest_trend.id,
+                    "title": newest_trend.title,
+                    "platform": newest_trend.platform,
+                    "created_at": newest_trend.created_at.isoformat()
+                }
+        except Exception as e:
+            logger.warning(f"Erro ao obter estatísticas básicas: {e}")
+        
+        # Estatísticas específicas por tipo de banco
+        try:
+            if stats["database_type"] == "postgresql":
+                # PostgreSQL
+                db_size_query = text("""
+                    SELECT pg_size_pretty(pg_database_size(current_database())) as size,
+                           pg_database_size(current_database()) as bytes
+                """)
+                result = db.execute(db_size_query).fetchone()
                 stats["database_size"] = {
-                    "formatted": f"{result.size_mb} MB",
+                    "formatted": result.size,
                     "bytes": result.bytes
                 }
-            
-            # Tamanho das tabelas
-            table_size_query = text("""
-                SELECT 
-                    table_name,
-                    ROUND((data_length + index_length) / 1024 / 1024, 2) as size_mb,
-                    (data_length + index_length) as bytes
-                FROM information_schema.TABLES
-                WHERE table_schema = DATABASE()
-                ORDER BY (data_length + index_length) DESC
-            """)
-            
-            for row in db.execute(table_size_query).fetchall():
-                stats["tables"][row.table_name] = {
-                    "size": f"{row.size_mb} MB",
-                    "bytes": row.bytes
-                }
+                
+                # Tamanho das tabelas
+                table_size_query = text("""
+                    SELECT
+                        tablename as table_name,
+                        pg_size_pretty(pg_total_relation_size(quote_ident(tablename))) as size,
+                        pg_total_relation_size(quote_ident(tablename)) as bytes
+                    FROM pg_tables
+                    WHERE schemaname = 'public'
+                """)
+                
+                for row in db.execute(table_size_query).fetchall():
+                    stats["tables"][row.table_name] = {
+                        "size": row.size,
+                        "bytes": row.bytes
+                    }
+                    
+            elif stats["database_type"] == "mysql":
+                # MySQL
+                db_size_query = text("""
+                    SELECT 
+                        table_schema as database_name,
+                        ROUND(SUM(data_length + index_length) / 1024 / 1024, 2) as size_mb,
+                        SUM(data_length + index_length) as bytes
+                    FROM information_schema.TABLES 
+                    WHERE table_schema = DATABASE()
+                    GROUP BY table_schema
+                """)
+                
+                result = db.execute(db_size_query).fetchone()
+                if result:
+                    stats["database_size"] = {
+                        "size": result.size_mb,
+                        "unit": "MB",
+                        "bytes": result.bytes
+                    }
+                else:
+                    stats["database_size"] = {"size": 0, "unit": "bytes"}
+                
+                # Tamanho das tabelas
+                table_size_query = text("""
+                    SELECT 
+                        table_name,
+                        ROUND((data_length + index_length) / 1024 / 1024, 2) as size_mb,
+                        (data_length + index_length) as bytes,
+                        table_rows as row_count
+                    FROM information_schema.TABLES
+                    WHERE table_schema = DATABASE()
+                """)
+                
+                for row in db.execute(table_size_query).fetchall():
+                    stats["tables"][row.table_name] = {
+                        "size": row.size_mb,
+                        "unit": "MB",
+                        "bytes": row.bytes,
+                        "rows": row.row_count
+                    }
+            elif stats["database_type"] == "sqlite":
+                # SQLite - informações limitadas
+                stats["database_size"] = {"size": 0, "unit": "bytes", "note": "Tamanho não disponível para SQLite"}
+                
+                # Lista tabelas
+                table_list_query = text("SELECT name FROM sqlite_master WHERE type='table';")
+                for row in db.execute(table_list_query).fetchall():
+                    table_name = row[0]
+                    # Conta registros para cada tabela
+                    count_query = text(f"SELECT COUNT(*) FROM {table_name}")
+                    try:
+                        count = db.execute(count_query).scalar()
+                        stats["tables"][table_name] = {
+                            "rows": count,
+                            "note": "Tamanho não disponível para SQLite"
+                        }
+                    except Exception:
+                        # Ignora tabelas que não podem ser consultadas
+                        pass
+        except Exception as e:
+            logger.warning(f"Erro ao obter estatísticas específicas do banco: {e}")
         
         return stats
     except Exception as e:
@@ -541,6 +614,56 @@ async def cleanup_database(
             "max_records": max_records
         }
     }
+
+
+@app.post("/api/trends/refresh", response_model=Dict[str, Any], status_code=202)
+def refresh_trends():
+    """
+    Inicia uma tarefa para buscar novas tendências de todas as plataformas.
+    """
+    try:
+        # Importa aqui para evitar circular imports
+        from app.tasks import fetch_all_trends
+        
+        # Inicia a tarefa em background
+        task = fetch_all_trends.delay()
+        
+        return {
+            "status": "Task initiated",
+            "task_id": str(task.id),
+            "message": "Busca de tendências iniciada em background"
+        }
+    except Exception as e:
+        logger.error(f"Erro ao iniciar busca de tendências: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Erro ao iniciar busca de tendências: {str(e)}"
+        )
+
+
+@app.get("/api/stats", response_model=Dict[str, Any])
+async def get_stats():
+    """
+    Alias para o endpoint /api/database/stats.
+    Retorna estatísticas sobre as tendências no banco de dados.
+    """
+    try:
+        return await get_database_stats()
+    except Exception as e:
+        logger.error(f"Erro ao obter estatísticas do banco de dados: {str(e)}")
+        # Retorna um objeto vazio estruturado quando ocorre um erro
+        import os
+        return {
+            "environment": os.getenv("ENVIRONMENT", "development"),
+            "database_type": "unknown",
+            "tables": {},
+            "total_trends": 0,
+            "trends_by_platform": {},
+            "trends_by_category": {},
+            "oldest_trend": None,
+            "newest_trend": None,
+            "database_size": {"size": 0, "unit": "bytes"}
+        }
 
 
 if __name__ == "__main__":

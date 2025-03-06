@@ -8,6 +8,7 @@ services:
     healthCheckPath: /api/status
     healthCheckTimeout: 30
     healthCheckInterval: 60
+    buildCommand: bash ./pre_deploy_tests.sh
     envVars:
       - key: DATABASE_URL
         sync: false
@@ -29,6 +30,8 @@ services:
         value: "1"
       - key: SERVICE
         value: api
+      - key: INSTALL_DEV_DEPS
+        value: "true"
 
   # Celery Worker
   - type: worker

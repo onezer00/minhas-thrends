@@ -20,8 +20,8 @@ RUN mkdir -p /tmp/celerybeat && \
     chmod -R 755 /tmp/celerybeat
 
 # Copia requirements primeiro para aproveitar o cache de camadas do Docker
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+COPY requirements.txt requirements-dev.txt ./
+RUN pip install --no-cache-dir -r requirements.txt -r requirements-dev.txt
 
 # Copia o restante do código
 COPY . .

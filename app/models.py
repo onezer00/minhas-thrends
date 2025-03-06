@@ -1,7 +1,7 @@
 import os
 import datetime
 import logging
-from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime, JSON, ForeignKey, desc
+from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime, JSON, ForeignKey, desc, UniqueConstraint
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship
 
@@ -100,6 +100,11 @@ class Trend(Base):
     Modelo para armazenar tendências de diferentes plataformas.
     """
     __tablename__ = "trends"
+    
+    # Restrição de unicidade para platform + external_id
+    __table_args__ = (
+        UniqueConstraint('platform', 'external_id', name='uix_platform_external_id'),
+    )
 
     id = Column(Integer, primary_key=True, index=True)
     title = Column(Text, nullable=False)  # Usando Text para garantir suporte a títulos longos

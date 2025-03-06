@@ -1,0 +1,62 @@
+[
+  {
+    "title": "Novo estudo mostra que programadores que usam Python são mais produtivos",
+    "url": "https://www.reddit.com/r/programming/comments/abc123",
+    "platform": "reddit",
+    "category": "tecnologia",
+    "rank": 1,
+    "upvotes": 15000,
+    "comments": 1200,
+    "author": "dev_python",
+    "subreddit": "programming",
+    "created_at": "2023-09-16T08:45:00Z"
+  },
+  {
+    "title": "Discussão: Qual o melhor framework para desenvolvimento web em 2023?",
+    "url": "https://www.reddit.com/r/webdev/comments/def456",
+    "platform": "reddit",
+    "category": "tecnologia",
+    "rank": 2,
+    "upvotes": 8500,
+    "comments": 950,
+    "author": "webdev_master",
+    "subreddit": "webdev",
+    "created_at": "2023-09-15T14:20:00Z"
+  },
+  {
+    "title": "Análise do último episódio da série mais popular do momento",
+    "url": "https://www.reddit.com/r/television/comments/ghi789",
+    "platform": "reddit",
+    "category": "entretenimento",
+    "rank": 3,
+    "upvotes": 22000,
+    "comments": 3500,
+    "author": "series_fan",
+    "subreddit": "television",
+    "created_at": "2023-09-18T10:30:00Z"
+  },
+  {
+    "title": "Receita tradicional de feijoada que aprendi com minha avó",
+    "url": "https://www.reddit.com/r/Cooking/comments/jkl012",
+    "platform": "reddit",
+    "category": "culinaria",
+    "rank": 4,
+    "upvotes": 5600,
+    "comments": 480,
+    "author": "chef_brasileiro",
+    "subreddit": "Cooking",
+    "created_at": "2023-09-14T16:15:00Z"
+  },
+  {
+    "title": "Discussão sobre as últimas notícias políticas no Brasil",
+    "url": "https://www.reddit.com/r/brasil/comments/mno345",
+    "platform": "reddit",
+    "category": "noticias",
+    "rank": 5,
+    "upvotes": 12500,
+    "comments": 2800,
+    "author": "politico_br",
+    "subreddit": "brasil",
+    "created_at": "2023-09-17T09:00:00Z"
+  }
+] 
