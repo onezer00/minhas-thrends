@@ -5,6 +5,7 @@ import unittest
 from unittest.mock import patch, MagicMock
 import pytest
 from datetime import datetime
+import os
 
 from app.tasks import fetch_youtube_trends, fetch_reddit_trends
 from app.models import Trend
@@ -66,9 +67,14 @@ class TestYouTubeTrendFetcher(unittest.TestCase):
         mock_query.filter = mock_filter
         mock_session.query.return_value = mock_query
         
+        # Mock para get_env_var para retornar uma chave de API válida
+        mock_get_env_var = MagicMock(return_value="fake_api_key")
+        
         # Patch das funções necessárias
         with patch('app.tasks.SessionLocal', mock_session_local), \
-             patch('googleapiclient.discovery.build', mock_build):
+             patch('googleapiclient.discovery.build', mock_build), \
+             patch('app.tasks.get_env_var', mock_get_env_var), \
+             patch.dict(os.environ, {"YOUTUBE_API_KEY": "fake_api_key"}):
             
             # Executar a função
             result = fetch_youtube_trends()
@@ -88,9 +94,14 @@ class TestYouTubeTrendFetcher(unittest.TestCase):
         # Simular um erro na API
         mock_build = MagicMock(side_effect=Exception("API Error"))
         
+        # Mock para get_env_var para retornar uma chave de API válida
+        mock_get_env_var = MagicMock(return_value="fake_api_key")
+        
         # Patch das funções necessárias
         with patch('app.tasks.SessionLocal', mock_session_local), \
-             patch('googleapiclient.discovery.build', mock_build):
+             patch('googleapiclient.discovery.build', mock_build), \
+             patch('app.tasks.get_env_var', mock_get_env_var), \
+             patch.dict(os.environ, {"YOUTUBE_API_KEY": "fake_api_key"}):
             
             # Executar a função
             result = fetch_youtube_trends()
@@ -122,9 +133,14 @@ class TestYouTubeTrendFetcher(unittest.TestCase):
         mock_youtube.videos = mock_videos
         mock_build = MagicMock(return_value=mock_youtube)
         
+        # Mock para get_env_var para retornar uma chave de API válida
+        mock_get_env_var = MagicMock(return_value="fake_api_key")
+        
         # Patch das funções necessárias
         with patch('app.tasks.SessionLocal', mock_session_local), \
-             patch('googleapiclient.discovery.build', mock_build):
+             patch('googleapiclient.discovery.build', mock_build), \
+             patch('app.tasks.get_env_var', mock_get_env_var), \
+             patch.dict(os.environ, {"YOUTUBE_API_KEY": "fake_api_key"}):
             
             # Executar a função
             result = fetch_youtube_trends()
@@ -175,9 +191,30 @@ class TestRedditTrendFetcher(unittest.TestCase):
         mock_query.filter = mock_filter
         mock_session.query.return_value = mock_query
         
+        # Mock para get_env_var para retornar credenciais válidas
+        def mock_get_env_var_side_effect(var_name, default=None):
+            if var_name == "REDDIT_CLIENT_ID":
+                return "fake_client_id"
+            elif var_name == "REDDIT_SECRET":
+                return "fake_secret"
+            elif var_name == "REDDIT_USERNAME":
+                return "fake_username"
+            elif var_name == "REDDIT_PASSWORD":
+                return "fake_password"
+            return default
+        
+        mock_get_env_var = MagicMock(side_effect=mock_get_env_var_side_effect)
+        
         # Patch das funções necessárias
         with patch('app.tasks.SessionLocal', mock_session_local), \
-             patch('praw.Reddit', mock_reddit_class):
+             patch('praw.Reddit', mock_reddit_class), \
+             patch('app.tasks.get_env_var', mock_get_env_var), \
+             patch.dict(os.environ, {
+                 "REDDIT_CLIENT_ID": "fake_client_id",
+                 "REDDIT_SECRET": "fake_secret",
+                 "REDDIT_USERNAME": "fake_username",
+                 "REDDIT_PASSWORD": "fake_password"
+             }):
             
             # Executar a função
             result = fetch_reddit_trends()
@@ -197,9 +234,30 @@ class TestRedditTrendFetcher(unittest.TestCase):
         # Simular um erro na API
         mock_reddit_class = MagicMock(side_effect=Exception("API Error"))
         
+        # Mock para get_env_var para retornar credenciais válidas
+        def mock_get_env_var_side_effect(var_name, default=None):
+            if var_name == "REDDIT_CLIENT_ID":
+                return "fake_client_id"
+            elif var_name == "REDDIT_SECRET":
+                return "fake_secret"
+            elif var_name == "REDDIT_USERNAME":
+                return "fake_username"
+            elif var_name == "REDDIT_PASSWORD":
+                return "fake_password"
+            return default
+        
+        mock_get_env_var = MagicMock(side_effect=mock_get_env_var_side_effect)
+        
         # Patch das funções necessárias
         with patch('app.tasks.SessionLocal', mock_session_local), \
-             patch('praw.Reddit', mock_reddit_class):
+             patch('praw.Reddit', mock_reddit_class), \
+             patch('app.tasks.get_env_var', mock_get_env_var), \
+             patch.dict(os.environ, {
+                 "REDDIT_CLIENT_ID": "fake_client_id",
+                 "REDDIT_SECRET": "fake_secret",
+                 "REDDIT_USERNAME": "fake_username",
+                 "REDDIT_PASSWORD": "fake_password"
+             }):
             
             # Executar a função
             result = fetch_reddit_trends()
@@ -225,9 +283,30 @@ class TestRedditTrendFetcher(unittest.TestCase):
         mock_reddit.subreddit.return_value = mock_subreddit
         mock_reddit_class = MagicMock(return_value=mock_reddit)
         
+        # Mock para get_env_var para retornar credenciais válidas
+        def mock_get_env_var_side_effect(var_name, default=None):
+            if var_name == "REDDIT_CLIENT_ID":
+                return "fake_client_id"
+            elif var_name == "REDDIT_SECRET":
+                return "fake_secret"
+            elif var_name == "REDDIT_USERNAME":
+                return "fake_username"
+            elif var_name == "REDDIT_PASSWORD":
+                return "fake_password"
+            return default
+        
+        mock_get_env_var = MagicMock(side_effect=mock_get_env_var_side_effect)
+        
         # Patch das funções necessárias
         with patch('app.tasks.SessionLocal', mock_session_local), \
-             patch('praw.Reddit', mock_reddit_class):
+             patch('praw.Reddit', mock_reddit_class), \
+             patch('app.tasks.get_env_var', mock_get_env_var), \
+             patch.dict(os.environ, {
+                 "REDDIT_CLIENT_ID": "fake_client_id",
+                 "REDDIT_SECRET": "fake_secret",
+                 "REDDIT_USERNAME": "fake_username",
+                 "REDDIT_PASSWORD": "fake_password"
+             }):
             
             # Executar a função
             result = fetch_reddit_trends()
