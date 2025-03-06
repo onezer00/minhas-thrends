@@ -15,14 +15,14 @@ class TestYouTubeTrendFetcher(unittest.TestCase):
     """Testes para o fetcher de tendências do YouTube."""
     
     @patch('app.tasks.SessionLocal')
-    @patch('googleapiclient.discovery.build')
-    def test_fetch_youtube_trends_success(self, mock_build, mock_session_local):
+    def test_fetch_youtube_trends_success(self, mock_session_local):
         """Testa a busca de tendências do YouTube com sucesso."""
         # Configurar o mock da sessão do banco de dados
         mock_session = MagicMock()
         mock_session_local.return_value = mock_session
         
-        # Configurar o mock do serviço YouTube
+        # Configurar o mock para build
+        mock_build = MagicMock()
         mock_youtube = MagicMock()
         mock_videos = MagicMock()
         mock_list = MagicMock()
@@ -68,41 +68,44 @@ class TestYouTubeTrendFetcher(unittest.TestCase):
         mock_query.filter = mock_filter
         mock_session.query.return_value = mock_query
         
-        # Executar a função
-        result = fetch_youtube_trends()
-        
-        # Verificar se a API foi chamada corretamente
-        mock_build.assert_called_once()
-        
-        # Verificar se os dados foram salvos no banco de dados
-        self.assertTrue(mock_session.add.called)
-        self.assertTrue(mock_session.commit.called)
+        # Patch interno para build
+        with patch('app.tasks.build', mock_build):
+            # Executar a função
+            result = fetch_youtube_trends()
+            
+            # Verificar se a API foi chamada corretamente
+            mock_build.assert_called_once()
+            
+            # Verificar se os dados foram salvos no banco de dados
+            self.assertTrue(mock_session.add.called)
+            self.assertTrue(mock_session.commit.called)
     
     @patch('app.tasks.SessionLocal')
-    @patch('googleapiclient.discovery.build')
-    def test_fetch_youtube_trends_error(self, mock_build, mock_session_local):
+    def test_fetch_youtube_trends_error(self, mock_session_local):
         """Testa a busca de tendências do YouTube com erro."""
         # Simular um erro na API
-        mock_build.side_effect = Exception("API Error")
+        mock_build = MagicMock(side_effect=Exception("API Error"))
         
-        # Executar a função
-        result = fetch_youtube_trends()
-        
-        # Verificar se a API foi chamada
-        mock_build.assert_called_once()
-        
-        # Verificar que nenhum dado foi salvo no banco de dados
-        mock_session_local.assert_not_called()
+        # Patch interno para build
+        with patch('app.tasks.build', mock_build):
+            # Executar a função
+            result = fetch_youtube_trends()
+            
+            # Verificar se a API foi chamada
+            mock_build.assert_called_once()
+            
+            # Verificar que nenhum dado foi salvo no banco de dados
+            mock_session_local.assert_not_called()
     
     @patch('app.tasks.SessionLocal')
-    @patch('googleapiclient.discovery.build')
-    def test_fetch_youtube_trends_empty(self, mock_build, mock_session_local):
+    def test_fetch_youtube_trends_empty(self, mock_session_local):
         """Testa a busca de tendências do YouTube com resposta vazia."""
         # Configurar o mock da sessão do banco de dados
         mock_session = MagicMock()
         mock_session_local.return_value = mock_session
         
-        # Configurar o mock do serviço YouTube com resposta vazia
+        # Configurar o mock para build
+        mock_build = MagicMock()
         mock_youtube = MagicMock()
         mock_videos = MagicMock()
         mock_list = MagicMock()
@@ -117,27 +120,29 @@ class TestYouTubeTrendFetcher(unittest.TestCase):
         mock_youtube.videos = mock_videos
         mock_build.return_value = mock_youtube
         
-        # Executar a função
-        result = fetch_youtube_trends()
-        
-        # Verificar se a API foi chamada corretamente
-        mock_build.assert_called_once()
-        
-        # Verificar que nenhum dado foi salvo no banco de dados
-        self.assertFalse(mock_session.add.called)
+        # Patch interno para build
+        with patch('app.tasks.build', mock_build):
+            # Executar a função
+            result = fetch_youtube_trends()
+            
+            # Verificar se a API foi chamada corretamente
+            mock_build.assert_called_once()
+            
+            # Verificar que nenhum dado foi salvo no banco de dados
+            self.assertFalse(mock_session.add.called)
 
 class TestRedditTrendFetcher(unittest.TestCase):
     """Testes para o fetcher de tendências do Reddit."""
     
     @patch('app.tasks.SessionLocal')
-    @patch('praw.Reddit')
-    def test_fetch_reddit_trends_success(self, mock_reddit_class, mock_session_local):
+    def test_fetch_reddit_trends_success(self, mock_session_local):
         """Testa a busca de tendências do Reddit com sucesso."""
         # Configurar o mock da sessão do banco de dados
         mock_session = MagicMock()
         mock_session_local.return_value = mock_session
         
-        # Configurar o mock do cliente Reddit
+        # Configurar o mock para Reddit
+        mock_reddit_class = MagicMock()
         mock_reddit = MagicMock()
         mock_subreddit = MagicMock()
         
@@ -168,41 +173,44 @@ class TestRedditTrendFetcher(unittest.TestCase):
         mock_query.filter = mock_filter
         mock_session.query.return_value = mock_query
         
-        # Executar a função
-        result = fetch_reddit_trends()
-        
-        # Verificar se o cliente Reddit foi criado corretamente
-        mock_reddit_class.assert_called_once()
-        
-        # Verificar se os dados foram salvos no banco de dados
-        self.assertTrue(mock_session.add.called)
-        self.assertTrue(mock_session.commit.called)
+        # Patch interno para Reddit
+        with patch('app.tasks.praw.Reddit', mock_reddit_class):
+            # Executar a função
+            result = fetch_reddit_trends()
+            
+            # Verificar se o cliente Reddit foi criado corretamente
+            mock_reddit_class.assert_called_once()
+            
+            # Verificar se os dados foram salvos no banco de dados
+            self.assertTrue(mock_session.add.called)
+            self.assertTrue(mock_session.commit.called)
     
     @patch('app.tasks.SessionLocal')
-    @patch('praw.Reddit')
-    def test_fetch_reddit_trends_error(self, mock_reddit_class, mock_session_local):
+    def test_fetch_reddit_trends_error(self, mock_session_local):
         """Testa a busca de tendências do Reddit com erro."""
         # Simular um erro na API
-        mock_reddit_class.side_effect = Exception("API Error")
+        mock_reddit_class = MagicMock(side_effect=Exception("API Error"))
         
-        # Executar a função
-        result = fetch_reddit_trends()
-        
-        # Verificar se o cliente Reddit foi criado
-        mock_reddit_class.assert_called_once()
-        
-        # Verificar que nenhum dado foi salvo no banco de dados
-        mock_session_local.assert_not_called()
+        # Patch interno para Reddit
+        with patch('app.tasks.praw.Reddit', mock_reddit_class):
+            # Executar a função
+            result = fetch_reddit_trends()
+            
+            # Verificar se o cliente Reddit foi criado
+            mock_reddit_class.assert_called_once()
+            
+            # Verificar que nenhum dado foi salvo no banco de dados
+            mock_session_local.assert_not_called()
     
     @patch('app.tasks.SessionLocal')
-    @patch('praw.Reddit')
-    def test_fetch_reddit_trends_empty(self, mock_reddit_class, mock_session_local):
+    def test_fetch_reddit_trends_empty(self, mock_session_local):
         """Testa a busca de tendências do Reddit com resposta vazia."""
         # Configurar o mock da sessão do banco de dados
         mock_session = MagicMock()
         mock_session_local.return_value = mock_session
         
-        # Configurar o mock do cliente Reddit com resposta vazia
+        # Configurar o mock para Reddit
+        mock_reddit_class = MagicMock()
         mock_reddit = MagicMock()
         mock_subreddit = MagicMock()
         
@@ -211,11 +219,13 @@ class TestRedditTrendFetcher(unittest.TestCase):
         mock_reddit.subreddit.return_value = mock_subreddit
         mock_reddit_class.return_value = mock_reddit
         
-        # Executar a função
-        result = fetch_reddit_trends()
-        
-        # Verificar se o cliente Reddit foi criado corretamente
-        mock_reddit_class.assert_called_once()
-        
-        # Verificar que nenhum dado foi salvo no banco de dados
-        self.assertFalse(mock_session.add.called) 
+        # Patch interno para Reddit
+        with patch('app.tasks.praw.Reddit', mock_reddit_class):
+            # Executar a função
+            result = fetch_reddit_trends()
+            
+            # Verificar se o cliente Reddit foi criado corretamente
+            mock_reddit_class.assert_called_once()
+            
+            # Verificar que nenhum dado foi salvo no banco de dados
+            self.assertFalse(mock_session.add.called) 
