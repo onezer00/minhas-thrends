@@ -67,6 +67,23 @@ celery.conf.beat_schedule = {
         'schedule': crontab(day_of_week='sunday', hour=2, minute=0),  # Todo domingo às 2h da manhã
         'kwargs': {'max_days': 60, 'max_records': 5000},
     },
+    'fetch-youtube-trends': {
+        'task': 'app.tasks.fetch_youtube_trends',
+        'schedule': crontab(hour='*/4'),  # A cada 4 horas em vez de 3
+    },
+    'fetch-reddit-trends': {
+        'task': 'app.tasks.fetch_reddit_trends',
+        'schedule': crontab(hour='*/4'),  # A cada 4 horas em vez de 2
+    },
+    # Novas tarefas para otimização no plano Free
+    'check-missed-tasks': {
+        'task': 'app.tasks.check_missed_tasks',
+        'schedule': crontab(minute='15', hour='*/2'),  # A cada 2 horas, no minuto 15
+    },
+    'clean-old-tasks': {
+        'task': 'app.tasks.clean_old_tasks',
+        'schedule': crontab(minute='0', hour='*/12'),  # A cada 12 horas
+    },
 }
 
 # Função para obter variáveis de ambiente com log
@@ -731,3 +748,63 @@ def classify_trend_category(text):
                 return category
 
     return "outros"  # Categoria padrão
+
+@celery.task
+def check_missed_tasks():
+    """Verifica se alguma tarefa agendada foi perdida devido ao adormecimento do serviço."""
+    from app.models import db_session, Trend
+    import datetime
+    
+    logger.info("Verificando tarefas perdidas...")
+    
+    try:
+        last_trend = db_session.query(Trend).order_by(Trend.created_at.desc()).first()
+        if last_trend:
+            hours_since_update = (datetime.datetime.utcnow() - last_trend.created_at.replace(tzinfo=None)).total_seconds() / 3600
+            logger.info(f"Última atualização de tendências: {last_trend.created_at} ({hours_since_update:.1f} horas atrás)")
+            
+            if hours_since_update > 5:  # Se passaram mais de 5 horas desde a última atualização
+                logger.warning(f"Detectadas tarefas perdidas. Última atualização há {hours_since_update:.1f} horas.")
+                # Agenda uma atualização imediata
+                fetch_all_trends.delay()
+        else:
+            logger.warning("Nenhuma tendência encontrada no banco de dados. Agendando busca inicial.")
+            fetch_all_trends.delay()
+    except Exception as e:
+        logger.error(f"Erro ao verificar tarefas perdidas: {str(e)}")
+    finally:
+        db_session.close()
+
+@celery.task
+def clean_old_tasks():
+    """Remove tarefas antigas do backend do Celery para economizar memória do Redis."""
+    try:
+        # Limpa a fila de tarefas
+        celery.control.purge()
+        logger.info("Fila de tarefas limpa para economizar memória do Redis.")
+        
+        # Verifica o uso de memória do Redis (se possível)
+        if check_redis_connection():
+            try:
+                from redis import Redis
+                from app.celery_app import app as celery_app
+                
+                redis_url = celery_app.conf.broker_url
+                redis_client = Redis.from_url(redis_url)
+                info = redis_client.info(section="memory")
+                
+                used_memory_mb = info.get("used_memory", 0) / (1024 * 1024)
+                used_memory_peak_mb = info.get("used_memory_peak", 0) / (1024 * 1024)
+                
+                logger.info(f"Uso de memória do Redis: {used_memory_mb:.2f}MB (pico: {used_memory_peak_mb:.2f}MB)")
+                
+                # Se estiver usando mais de 20MB (plano Free tem 25MB), tomar medidas adicionais
+                if used_memory_mb > 20:
+                    logger.warning(f"Uso de memória do Redis alto: {used_memory_mb:.2f}MB. Executando limpeza adicional.")
+                    # Limpar resultados de tarefas
+                    redis_client.flushdb()
+                    logger.info("Redis DB limpo para liberar memória.")
+            except Exception as e:
+                logger.error(f"Erro ao verificar memória do Redis: {str(e)}")
+    except Exception as e:
+        logger.error(f"Erro ao limpar tarefas antigas: {str(e)}")

@@ -144,6 +144,43 @@ async def log_requests(request: Request, call_next):
     
     return response
 
+# Middleware para lidar com o "adormecimento" no plano Free
+@app.middleware("http")
+async def handle_free_tier_sleep(request: Request, call_next):
+    """
+    Middleware para lidar com o "adormecimento" no plano Free do Render.
+    Verifica e reconecta ao banco de dados e Redis quando necessário.
+    """
+    import time
+    from app.tasks import check_redis_connection
+    from app.models import check_db_connection, create_tables
+    
+    start_time = time.time()
+    
+    # Verifica se é a primeira requisição após "adormecimento"
+    # Uma requisição normal deve levar menos de 1 segundo
+    # Se levar mais de 5 segundos, provavelmente o serviço estava "adormecido"
+    response = await call_next(request)
+    
+    process_time = time.time() - start_time
+    if process_time > 5:
+        logger.warning(f"Requisição demorada ({process_time:.2f}s). Verificando conexões após possível 'adormecimento'.")
+        
+        # Verifica conexão com o banco de dados
+        if not check_db_connection():
+            logger.warning("Reconectando ao banco de dados após 'adormecimento'...")
+            try:
+                create_tables()
+                logger.info("Reconexão ao banco de dados bem-sucedida!")
+            except Exception as e:
+                logger.error(f"Erro ao reconectar ao banco de dados: {str(e)}")
+        
+        # Verifica conexão com o Redis
+        if not check_redis_connection():
+            logger.warning("Redis desconectado após 'adormecimento'. As tarefas assíncronas podem não funcionar.")
+    
+    return response
+
 # Rotas da API
 @app.get("/")
 def read_root():
@@ -293,93 +330,46 @@ status_cache = {
 }
 STATUS_CACHE_TTL = 60  # Tempo de vida do cache em segundos
 
-@app.get("/api/status", tags=["Status"], response_model=Dict[str, Any])
-async def status(force_check: bool = Query(False, description="Força uma nova verificação ignorando o cache")):
+@app.get("/api/status", tags=["Sistema"], response_model=Dict[str, Any])
+async def get_status():
     """
-    Endpoint para verificar o status da API e suas dependências.
-    Usado pelo Render.com para healthcheck.
-    
-    Por padrão, usa um cache de 60 segundos para reduzir a carga no Redis e banco de dados.
-    Use o parâmetro force_check=true para forçar uma nova verificação.
+    Retorna o status atual da API, incluindo conexões com banco de dados e Redis.
+    Também inclui informações sobre o ambiente e versão.
     """
-    global status_cache
+    from app.tasks import check_redis_connection
+    from app.models import check_db_connection
+    import platform
+    import psutil
     
-    # Verifica se o cache é válido
-    current_time = datetime.utcnow()
-    cache_valid = (
-        status_cache["last_check"] is not None and
-        (current_time - status_cache["last_check"]).total_seconds() < STATUS_CACHE_TTL
-    )
+    # Verifica conexões
+    db_ok = check_db_connection()
+    redis_ok = check_redis_connection(verbose=False)
     
-    # Se o cache for válido e não estamos forçando uma verificação, retorna o cache
-    if cache_valid and not force_check:
-        return {
-            "status": status_cache["status"],
-            "redis": status_cache["redis"],
-            "database": status_cache["database"],
-            "timestamp": status_cache["timestamp"],
-            "cached": True,
-            "cache_age": int((current_time - status_cache["last_check"]).total_seconds()),
-            "cache_ttl": STATUS_CACHE_TTL,
-            **({"db_error": status_cache["db_error"]} if status_cache["db_error"] else {}),
-            **({"redis_error": status_cache["redis_error"]} if status_cache["redis_error"] else {}),
-            "version": "1.0.0"
-        }
+    # Informações do sistema
+    memory = psutil.virtual_memory()
+    memory_usage = {
+        "total": f"{memory.total / (1024 * 1024):.1f} MB",
+        "available": f"{memory.available / (1024 * 1024):.1f} MB",
+        "percent": f"{memory.percent}%"
+    }
     
-    # Caso contrário, faz uma nova verificação
-    redis_ok = True
-    redis_error = None
+    # Status do plano Free
+    is_free_plan = os.environ.get("RENDER_SERVICE_TYPE") == "free"
     
-    try:
-        redis_ok = check_redis_connection(verbose=False)
-    except Exception as e:
-        redis_ok = False
-        redis_error = str(e)
-        logger.error(f"Erro ao verificar Redis: {str(e)}")
-    
-    # Verificar conexão com o banco de dados
-    db_ok = True
-    db_error = None
-    try:
-        db = SessionLocal()
-        db.execute(text("SELECT 1"))
-        db.close()
-    except Exception as e:
-        db_ok = False
-        db_error = str(e)
-        logger.error(f"Erro ao verificar banco de dados: {str(e)}")
-    
-    status_ok = redis_ok and db_ok
-    
-    # Atualiza o cache
-    status_cache = {
-        "last_check": current_time,
-        "timestamp": current_time.isoformat(),
+    return {
+        "status": "ok",
+        "timestamp": datetime.datetime.now().isoformat(),
+        "environment": os.environ.get("ENVIRONMENT", "development"),
+        "version": "1.0.0",
+        "database": "connected" if db_ok else "error",
         "redis": "connected" if redis_ok else "disconnected",
-        "database": "connected" if db_ok else "disconnected",
-        "status": "ok" if status_ok else "degraded",
-        "db_error": db_error,
-        "redis_error": redis_error,
-        "cache_ttl": STATUS_CACHE_TTL,
+        "system_info": {
+            "platform": platform.platform(),
+            "python": platform.python_version(),
+            "memory": memory_usage,
+            "free_plan": is_free_plan
+        }
     }
-    
-    response = {
-        "status": status_cache["status"],
-        "redis": status_cache["redis"],
-        "database": status_cache["database"],
-        "timestamp": status_cache["timestamp"],
-        "cached": False,
-        "version": "1.0.0"
-    }
-    
-    # Adiciona detalhes do erro se houver
-    if db_error:
-        response["db_error"] = db_error
-    
-    if redis_error:
-        response["redis_error"] = redis_error
-    
-    return response
 
 
 @app.get("/api/config")
