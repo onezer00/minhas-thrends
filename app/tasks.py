@@ -67,23 +67,6 @@ celery.conf.beat_schedule = {
         'schedule': crontab(day_of_week='sunday', hour=2, minute=0),  # Todo domingo às 2h da manhã
         'kwargs': {'max_days': 60, 'max_records': 5000},
     },
-    'fetch-youtube-trends': {
-        'task': 'app.tasks.fetch_youtube_trends',
-        'schedule': crontab(hour='*/4'),  # A cada 4 horas em vez de 3
-    },
-    'fetch-reddit-trends': {
-        'task': 'app.tasks.fetch_reddit_trends',
-        'schedule': crontab(hour='*/4'),  # A cada 4 horas em vez de 2
-    },
-    # Novas tarefas para otimização no plano Free
-    'check-missed-tasks': {
-        'task': 'app.tasks.check_missed_tasks',
-        'schedule': crontab(minute='15', hour='*/2'),  # A cada 2 horas, no minuto 15
-    },
-    'clean-old-tasks': {
-        'task': 'app.tasks.clean_old_tasks',
-        'schedule': crontab(minute='0', hour='*/12'),  # A cada 12 horas
-    },
 }
 
 # Função para obter variáveis de ambiente com log
@@ -108,30 +91,38 @@ REDDIT_USERNAME = get_env_var('REDDIT_USERNAME')
 REDDIT_PASSWORD = get_env_var('REDDIT_PASSWORD')
 
 # Função para verificar conexão com Redis
-def check_redis_connection():
-    """Verifica a conexão com o Redis e tenta ajustar a URL se necessário."""
+def check_redis_connection(verbose=True):
+    """
+    Verifica a conexão com o Redis e tenta ajustar a URL se necessário.
+    
+    Args:
+        verbose (bool): Se True, exibe logs detalhados. Default: True.
+        
+    Returns:
+        bool: True se a conexão for bem-sucedida, False caso contrário.
+    """
     import redis
-    import os
-    import time
     
     # Obter a URL do broker do Celery
-    broker_url = os.getenv('CELERY_BROKER_URL', '')
-    if not broker_url:
-        logger.error("CELERY_BROKER_URL não configurada!")
-        return False
+    broker_url = celery.conf.broker_url
     
-    # Extrair apenas o host e porta para o log (sem credenciais)
+    # Remover senha da URL para exibição nos logs
     safe_url = broker_url
     if '@' in broker_url:
-        safe_url = broker_url.split('@')[1]
+        safe_url = broker_url.split('@')[0].split('://')
+        safe_url = f"{safe_url[0]}://***:***@" + broker_url.split('@')[1]
     
-    logger.info(f"Tentando conectar ao Redis: {safe_url}")
+    if verbose:
+        logger.info(f"Tentando conectar ao Redis: {safe_url}")
     
     try:
-        # Tentar conectar usando a URL do broker
+        # Tentar conectar ao Redis
         client = redis.from_url(broker_url)
         ping_result = client.ping()
-        logger.info(f"Conexão com Redis bem-sucedida! Ping: {ping_result}")
+        
+        if verbose:
+            logger.info(f"Conexão com Redis bem-sucedida! Ping: {ping_result}")
+        
         return True
     except Exception as e:
         logger.error(f"Erro ao conectar ao Redis: {str(e)}")
@@ -141,40 +132,33 @@ def check_redis_connection():
             try:
                 # Extrair o host do Redis
                 host_part = broker_url.split('redis://')[1].split(':')[0]
-                if '@' in host_part:
-                    host_part = host_part.split('@')[1]
                 
                 # Tentar diferentes formatos de URL
-                alternate_urls = [
+                alternative_urls = [
                     f"redis://{host_part}:6379/0",
                     f"redis://trendpulse-redis:6379/0",
                     f"redis://trendpulse-redis.internal:6379/0",
                     f"redis://localhost:6379/0"
                 ]
                 
-                for url in alternate_urls:
+                for url in alternative_urls:
                     try:
-                        logger.info(f"Tentando URL alternativa: {url}")
+                        if verbose:
+                            logger.info(f"Tentando URL alternativa: {url}")
                         client = redis.from_url(url)
-                        if client.ping():
-                            logger.info(f"Conexão bem-sucedida com URL alternativa: {url}")
-                            
-                            # Atualizar as variáveis de ambiente
-                            os.environ['CELERY_BROKER_URL'] = url
-                            os.environ['CELERY_RESULT_BACKEND'] = url
-                            
-                            # Tentar atualizar a configuração do Celery
-                            try:
-                                from app.celery_app import celery
-                                celery.conf.broker_url = url
-                                celery.conf.result_backend = url
-                                logger.info("Configuração do Celery atualizada")
-                            except Exception as ce:
-                                logger.warning(f"Não foi possível atualizar a configuração do Celery: {str(ce)}")
-                            
-                            return True
-                    except Exception as inner_e:
-                        logger.warning(f"Falha com URL alternativa {url}: {str(inner_e)}")
+                        ping_result = client.ping()
+                        
+                        if verbose:
+                            logger.info(f"Conexão com Redis bem-sucedida usando URL alternativa! Ping: {ping_result}")
+                        
+                        # Atualizar a URL do broker
+                        celery.conf.broker_url = url
+                        celery.conf.result_backend = url
+                        
+                        return True
+                    except Exception as alt_e:
+                        if verbose:
+                            logger.warning(f"Falha ao conectar usando URL alternativa {url}: {str(alt_e)}")
             except Exception as parse_e:
                 logger.error(f"Erro ao analisar a URL do Redis: {str(parse_e)}")
         
@@ -748,63 +732,3 @@ def classify_trend_category(text):
                 return category
 
     return "outros"  # Categoria padrão
-
-@celery.task
-def check_missed_tasks():
-    """Verifica se alguma tarefa agendada foi perdida devido ao adormecimento do serviço."""
-    from app.models import db_session, Trend
-    import datetime
-    
-    logger.info("Verificando tarefas perdidas...")
-    
-    try:
-        last_trend = db_session.query(Trend).order_by(Trend.created_at.desc()).first()
-        if last_trend:
-            hours_since_update = (datetime.datetime.utcnow() - last_trend.created_at.replace(tzinfo=None)).total_seconds() / 3600
-            logger.info(f"Última atualização de tendências: {last_trend.created_at} ({hours_since_update:.1f} horas atrás)")
-            
-            if hours_since_update > 5:  # Se passaram mais de 5 horas desde a última atualização
-                logger.warning(f"Detectadas tarefas perdidas. Última atualização há {hours_since_update:.1f} horas.")
-                # Agenda uma atualização imediata
-                fetch_all_trends.delay()
-        else:
-            logger.warning("Nenhuma tendência encontrada no banco de dados. Agendando busca inicial.")
-            fetch_all_trends.delay()
-    except Exception as e:
-        logger.error(f"Erro ao verificar tarefas perdidas: {str(e)}")
-    finally:
-        db_session.close()
-
-@celery.task
-def clean_old_tasks():
-    """Remove tarefas antigas do backend do Celery para economizar memória do Redis."""
-    try:
-        # Limpa a fila de tarefas
-        celery.control.purge()
-        logger.info("Fila de tarefas limpa para economizar memória do Redis.")
-        
-        # Verifica o uso de memória do Redis (se possível)
-        if check_redis_connection():
-            try:
-                from redis import Redis
-                from app.celery_app import app as celery_app
-                
-                redis_url = celery_app.conf.broker_url
-                redis_client = Redis.from_url(redis_url)
-                info = redis_client.info(section="memory")
-                
-                used_memory_mb = info.get("used_memory", 0) / (1024 * 1024)
-                used_memory_peak_mb = info.get("used_memory_peak", 0) / (1024 * 1024)
-                
-                logger.info(f"Uso de memória do Redis: {used_memory_mb:.2f}MB (pico: {used_memory_peak_mb:.2f}MB)")
-                
-                # Se estiver usando mais de 20MB (plano Free tem 25MB), tomar medidas adicionais
-                if used_memory_mb > 20:
-                    logger.warning(f"Uso de memória do Redis alto: {used_memory_mb:.2f}MB. Executando limpeza adicional.")
-                    # Limpar resultados de tarefas
-                    redis_client.flushdb()
-                    logger.info("Redis DB limpo para liberar memória.")
-            except Exception as e:
-                logger.error(f"Erro ao verificar memória do Redis: {str(e)}")
-    except Exception as e:
-        logger.error(f"Erro ao limpar tarefas antigas: {str(e)}")

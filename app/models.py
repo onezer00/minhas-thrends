@@ -4,6 +4,7 @@ import logging
 from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime, JSON, ForeignKey, desc, UniqueConstraint
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship
+from sqlalchemy.sql import text
 
 # Configuração de logging
 logging.basicConfig(
@@ -229,3 +230,22 @@ def get_db():
             db.close()
         except Exception as e:
             logger.warning(f"Erro ao fechar conexão com o banco: {str(e)}")
+
+def check_db_connection():
+    """
+    Verifica se a conexão com o banco de dados está funcionando.
+    
+    Returns:
+        bool: True se a conexão estiver funcionando, False caso contrário.
+    """
+    try:
+        # Cria uma sessão temporária
+        session = SessionLocal()
+        # Executa uma consulta simples
+        session.execute(text("SELECT 1"))
+        # Fecha a sessão
+        session.close()
+        return True
+    except Exception as e:
+        logger.error(f"Erro ao verificar conexão com o banco de dados: {str(e)}")
+        return False

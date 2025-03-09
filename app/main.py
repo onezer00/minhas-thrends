@@ -152,32 +152,53 @@ async def handle_free_tier_sleep(request: Request, call_next):
     Verifica e reconecta ao banco de dados e Redis quando necessário.
     """
     import time
-    from app.tasks import check_redis_connection
-    from app.models import check_db_connection, create_tables
     
     start_time = time.time()
+    
+    # Executa a requisição normalmente
+    response = await call_next(request)
     
     # Verifica se é a primeira requisição após "adormecimento"
     # Uma requisição normal deve levar menos de 1 segundo
     # Se levar mais de 5 segundos, provavelmente o serviço estava "adormecido"
-    response = await call_next(request)
-    
     process_time = time.time() - start_time
     if process_time > 5:
         logger.warning(f"Requisição demorada ({process_time:.2f}s). Verificando conexões após possível 'adormecimento'.")
         
-        # Verifica conexão com o banco de dados
-        if not check_db_connection():
-            logger.warning("Reconectando ao banco de dados após 'adormecimento'...")
+        try:
+            # Importa as funções necessárias dentro do bloco try para evitar erros de importação
+            from app.models import create_tables
+            from app.tasks import check_redis_connection
+            
+            # Verifica conexão com o banco de dados usando uma função mais simples
             try:
-                create_tables()
-                logger.info("Reconexão ao banco de dados bem-sucedida!")
+                from app.models import check_db_connection
+                db_ok = check_db_connection()
+                if not db_ok:
+                    logger.warning("Reconectando ao banco de dados após 'adormecimento'...")
+                    try:
+                        create_tables()
+                        logger.info("Reconexão ao banco de dados bem-sucedida!")
+                    except Exception as e:
+                        logger.error(f"Erro ao reconectar ao banco de dados: {str(e)}")
+            except ImportError:
+                # Se a função check_db_connection não existir, tenta uma abordagem alternativa
+                logger.warning("Função check_db_connection não encontrada. Usando abordagem alternativa.")
+                try:
+                    create_tables()
+                    logger.info("Tabelas verificadas/criadas com sucesso.")
+                except Exception as e:
+                    logger.error(f"Erro ao verificar/criar tabelas: {str(e)}")
+            
+            # Verifica conexão com o Redis
+            try:
+                redis_ok = check_redis_connection(verbose=False)
+                redis_status = "connected" if redis_ok else "disconnected"
             except Exception as e:
-                logger.error(f"Erro ao reconectar ao banco de dados: {str(e)}")
-        
-        # Verifica conexão com o Redis
-        if not check_redis_connection():
-            logger.warning("Redis desconectado após 'adormecimento'. As tarefas assíncronas podem não funcionar.")
+                logger.error(f"Erro ao verificar status do Redis: {str(e)}")
+                redis_status = "error"
+        except Exception as e:
+            logger.error(f"Erro ao verificar conexões após 'adormecimento': {str(e)}")
     
     return response
 
@@ -330,45 +351,79 @@ status_cache = {
 }
 STATUS_CACHE_TTL = 60  # Tempo de vida do cache em segundos
 
-@app.get("/api/status", tags=["Sistema"], response_model=Dict[str, Any])
-async def get_status():
+@app.get("/api/status", tags=["Sistema"])
+def get_status():
     """
     Retorna o status atual da API, incluindo conexões com banco de dados e Redis.
     Também inclui informações sobre o ambiente e versão.
     """
-    from app.tasks import check_redis_connection
-    from app.models import check_db_connection
     import platform
-    import psutil
-    
-    # Verifica conexões
-    db_ok = check_db_connection()
-    redis_ok = check_redis_connection(verbose=False)
     
     # Informações do sistema
-    memory = psutil.virtual_memory()
-    memory_usage = {
-        "total": f"{memory.total / (1024 * 1024):.1f} MB",
-        "available": f"{memory.available / (1024 * 1024):.1f} MB",
-        "percent": f"{memory.percent}%"
+    system_info = {
+        "platform": platform.platform(),
+        "python": platform.python_version(),
     }
     
+    # Verifica conexões
+    db_status = "unknown"
+    redis_status = "unknown"
+    
+    try:
+        # Tenta importar e usar check_db_connection
+        try:
+            from app.models import check_db_connection
+            db_ok = check_db_connection()
+            db_status = "connected" if db_ok else "error"
+        except ImportError:
+            # Fallback para verificação direta
+            try:
+                from sqlalchemy.orm import Session
+                from app.models import SessionLocal
+                db = SessionLocal()
+                db.execute(text("SELECT 1"))
+                db.close()
+                db_status = "connected"
+            except Exception as e:
+                logger.error(f"Erro ao verificar banco de dados: {str(e)}")
+                db_status = "error"
+    except Exception as e:
+        logger.error(f"Erro ao verificar status do banco de dados: {str(e)}")
+        db_status = "error"
+    
+    try:
+        # Tenta verificar o Redis
+        from app.tasks import check_redis_connection
+        redis_ok = check_redis_connection(verbose=False)
+        redis_status = "connected" if redis_ok else "disconnected"
+    except Exception as e:
+        logger.error(f"Erro ao verificar status do Redis: {str(e)}")
+        redis_status = "error"
+    
+    # Tenta obter informações de memória, mas não falha se não conseguir
+    try:
+        import psutil
+        memory = psutil.virtual_memory()
+        system_info["memory"] = {
+            "total": f"{memory.total / (1024 * 1024):.1f} MB",
+            "available": f"{memory.available / (1024 * 1024):.1f} MB",
+            "percent": f"{memory.percent}%"
+        }
+    except Exception:
+        # Ignora erros ao obter informações de memória
+        pass
+    
     # Status do plano Free
-    is_free_plan = os.environ.get("RENDER_SERVICE_TYPE") == "free"
+    system_info["free_plan"] = os.environ.get("RENDER_SERVICE_TYPE") == "free"
     
     return {
         "status": "ok",
-        "timestamp": datetime.datetime.now().isoformat(),
+        "timestamp": datetime.now().isoformat(),
         "environment": os.environ.get("ENVIRONMENT", "development"),
         "version": "1.0.0",
-        "database": "connected" if db_ok else "error",
-        "redis": "connected" if redis_ok else "disconnected",
-        "system_info": {
-            "platform": platform.platform(),
-            "python": platform.python_version(),
-            "memory": memory_usage,
-            "free_plan": is_free_plan
-        }
+        "database": db_status,
+        "redis": redis_status,
+        "system_info": system_info
     }
 
 
