@@ -91,30 +91,38 @@ REDDIT_USERNAME = get_env_var('REDDIT_USERNAME')
 REDDIT_PASSWORD = get_env_var('REDDIT_PASSWORD')
 
 # Função para verificar conexão com Redis
-def check_redis_connection():
-    """Verifica a conexão com o Redis e tenta ajustar a URL se necessário."""
+def check_redis_connection(verbose=True):
+    """
+    Verifica a conexão com o Redis e tenta ajustar a URL se necessário.
+    
+    Args:
+        verbose (bool): Se True, exibe logs detalhados. Default: True.
+        
+    Returns:
+        bool: True se a conexão for bem-sucedida, False caso contrário.
+    """
     import redis
-    import os
-    import time
     
     # Obter a URL do broker do Celery
-    broker_url = os.getenv('CELERY_BROKER_URL', '')
-    if not broker_url:
-        logger.error("CELERY_BROKER_URL não configurada!")
-        return False
+    broker_url = celery.conf.broker_url
     
-    # Extrair apenas o host e porta para o log (sem credenciais)
+    # Remover senha da URL para exibição nos logs
     safe_url = broker_url
     if '@' in broker_url:
-        safe_url = broker_url.split('@')[1]
+        safe_url = broker_url.split('@')[0].split('://')
+        safe_url = f"{safe_url[0]}://***:***@" + broker_url.split('@')[1]
     
-    logger.info(f"Tentando conectar ao Redis: {safe_url}")
+    if verbose:
+        logger.info(f"Tentando conectar ao Redis: {safe_url}")
     
     try:
-        # Tentar conectar usando a URL do broker
+        # Tentar conectar ao Redis
         client = redis.from_url(broker_url)
         ping_result = client.ping()
-        logger.info(f"Conexão com Redis bem-sucedida! Ping: {ping_result}")
+        
+        if verbose:
+            logger.info(f"Conexão com Redis bem-sucedida! Ping: {ping_result}")
+        
         return True
     except Exception as e:
         logger.error(f"Erro ao conectar ao Redis: {str(e)}")
@@ -124,40 +132,33 @@ def check_redis_connection():
             try:
                 # Extrair o host do Redis
                 host_part = broker_url.split('redis://')[1].split(':')[0]
-                if '@' in host_part:
-                    host_part = host_part.split('@')[1]
                 
                 # Tentar diferentes formatos de URL
-                alternate_urls = [
+                alternative_urls = [
                     f"redis://{host_part}:6379/0",
                     f"redis://trendpulse-redis:6379/0",
                     f"redis://trendpulse-redis.internal:6379/0",
                     f"redis://localhost:6379/0"
                 ]
                 
-                for url in alternate_urls:
+                for url in alternative_urls:
                     try:
-                        logger.info(f"Tentando URL alternativa: {url}")
+                        if verbose:
+                            logger.info(f"Tentando URL alternativa: {url}")
                         client = redis.from_url(url)
-                        if client.ping():
-                            logger.info(f"Conexão bem-sucedida com URL alternativa: {url}")
-                            
-                            # Atualizar as variáveis de ambiente
-                            os.environ['CELERY_BROKER_URL'] = url
-                            os.environ['CELERY_RESULT_BACKEND'] = url
-                            
-                            # Tentar atualizar a configuração do Celery
-                            try:
-                                from app.celery_app import celery
-                                celery.conf.broker_url = url
-                                celery.conf.result_backend = url
-                                logger.info("Configuração do Celery atualizada")
-                            except Exception as ce:
-                                logger.warning(f"Não foi possível atualizar a configuração do Celery: {str(ce)}")
-                            
-                            return True
-                    except Exception as inner_e:
-                        logger.warning(f"Falha com URL alternativa {url}: {str(inner_e)}")
+                        ping_result = client.ping()
+                        
+                        if verbose:
+                            logger.info(f"Conexão com Redis bem-sucedida usando URL alternativa! Ping: {ping_result}")
+                        
+                        # Atualizar a URL do broker
+                        celery.conf.broker_url = url
+                        celery.conf.result_backend = url
+                        
+                        return True
+                    except Exception as alt_e:
+                        if verbose:
+                            logger.warning(f"Falha ao conectar usando URL alternativa {url}: {str(alt_e)}")
             except Exception as parse_e:
                 logger.error(f"Erro ao analisar a URL do Redis: {str(parse_e)}")
         

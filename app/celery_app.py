@@ -81,13 +81,18 @@ celery.conf.update(
     result_serializer='json',
     timezone='America/Sao_Paulo',
     enable_utc=True,
-    worker_max_tasks_per_child=100,  # Limita o número de tarefas por processo filho
+    worker_max_tasks_per_child=200,  # Reinicia o worker após 200 tarefas para liberar memória
     worker_prefetch_multiplier=1,    # Reduz o número de tarefas pré-buscadas
     broker_pool_limit=5,             # Limita o número de conexões no pool do broker
     redis_max_connections=10,        # Limita o número máximo de conexões Redis
-    result_expires=3600,             # Resultados expiram após 1 hora
+    result_expires=60 * 60 * 24,      # 1 dia em vez de 3
     beat_schedule_filename=beat_schedule_file,  # Arquivo de agendamento do celerybeat
     beat_max_loop_interval=300,      # Intervalo máximo entre verificações de agendamento
+    broker_connection_retry=True,    # Configuração para lidar com reconexões após "adormecimento"
+    broker_connection_retry_on_startup=True,
+    broker_connection_max_retries=10,
+    broker_connection_timeout=30,
+    worker_concurrency=2,             # Reduz a concorrência para economizar recursos
 )
 
 # Configuração para o Flower

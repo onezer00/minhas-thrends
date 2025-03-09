@@ -4,10 +4,10 @@ services:
     name: trendpulse-api
     env: docker
     dockerfilePath: ./Dockerfile
-    plan: starter
+    plan: free
     healthCheckPath: /api/status
-    healthCheckTimeout: 30
-    healthCheckInterval: 60
+    healthCheckTimeout: 60
+    healthCheckInterval: 120
     buildCommand: bash ./pre_deploy_tests.sh
     envVars:
       - key: DATABASE_URL
@@ -72,7 +72,7 @@ services:
     name: trendpulse-beat
     env: docker
     dockerfilePath: ./Dockerfile
-    plan: starter
+    plan: free
     envVars:
       - key: DATABASE_URL
         sync: false
@@ -90,13 +90,15 @@ services:
         value: "1"
       - key: SERVICE
         value: beat
+      - key: CELERY_BEAT_SCHEDULE_INTERVAL
+        value: "14400"
 
   # Flower Dashboard
   - type: web
     name: trendpulse-flower
     env: docker
     dockerfilePath: ./Dockerfile
-    plan: starter
+    plan: free
     envVars:
       - key: DATABASE_URL
         sync: false
@@ -120,6 +122,6 @@ services:
   # Redis
   - type: redis
     name: trendpulse-redis
-    plan: starter
-    maxmemoryPolicy: allkeys-lru
+    plan: free
+    maxmemoryPolicy: volatile-lru
     ipAllowList: []

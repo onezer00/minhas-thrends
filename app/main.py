@@ -144,6 +144,64 @@ async def log_requests(request: Request, call_next):
     
     return response
 
+# Middleware para lidar com o "adormecimento" no plano Free
+@app.middleware("http")
+async def handle_free_tier_sleep(request: Request, call_next):
+    """
+    Middleware para lidar com o "adormecimento" no plano Free do Render.
+    Verifica e reconecta ao banco de dados e Redis quando necessário.
+    """
+    import time
+    
+    start_time = time.time()
+    
+    # Executa a requisição normalmente
+    response = await call_next(request)
+    
+    # Verifica se é a primeira requisição após "adormecimento"
+    # Uma requisição normal deve levar menos de 1 segundo
+    # Se levar mais de 5 segundos, provavelmente o serviço estava "adormecido"
+    process_time = time.time() - start_time
+    if process_time > 5:
+        logger.warning(f"Requisição demorada ({process_time:.2f}s). Verificando conexões após possível 'adormecimento'.")
+        
+        try:
+            # Importa as funções necessárias dentro do bloco try para evitar erros de importação
+            from app.models import create_tables
+            from app.tasks import check_redis_connection
+            
+            # Verifica conexão com o banco de dados usando uma função mais simples
+            try:
+                from app.models import check_db_connection
+                db_ok = check_db_connection()
+                if not db_ok:
+                    logger.warning("Reconectando ao banco de dados após 'adormecimento'...")
+                    try:
+                        create_tables()
+                        logger.info("Reconexão ao banco de dados bem-sucedida!")
+                    except Exception as e:
+                        logger.error(f"Erro ao reconectar ao banco de dados: {str(e)}")
+            except ImportError:
+                # Se a função check_db_connection não existir, tenta uma abordagem alternativa
+                logger.warning("Função check_db_connection não encontrada. Usando abordagem alternativa.")
+                try:
+                    create_tables()
+                    logger.info("Tabelas verificadas/criadas com sucesso.")
+                except Exception as e:
+                    logger.error(f"Erro ao verificar/criar tabelas: {str(e)}")
+            
+            # Verifica conexão com o Redis
+            try:
+                redis_ok = check_redis_connection(verbose=False)
+                redis_status = "connected" if redis_ok else "disconnected"
+            except Exception as e:
+                logger.error(f"Erro ao verificar status do Redis: {str(e)}")
+                redis_status = "error"
+        except Exception as e:
+            logger.error(f"Erro ao verificar conexões após 'adormecimento': {str(e)}")
+    
+    return response
+
 # Rotas da API
 @app.get("/")
 def read_root():
@@ -293,93 +351,80 @@ status_cache = {
 }
 STATUS_CACHE_TTL = 60  # Tempo de vida do cache em segundos
 
-@app.get("/api/status", tags=["Status"], response_model=Dict[str, Any])
-async def status(force_check: bool = Query(False, description="Força uma nova verificação ignorando o cache")):
+@app.get("/api/status", tags=["Sistema"])
+def get_status():
     """
-    Endpoint para verificar o status da API e suas dependências.
-    Usado pelo Render.com para healthcheck.
-    
-    Por padrão, usa um cache de 60 segundos para reduzir a carga no Redis e banco de dados.
-    Use o parâmetro force_check=true para forçar uma nova verificação.
+    Retorna o status atual da API, incluindo conexões com banco de dados e Redis.
+    Também inclui informações sobre o ambiente e versão.
     """
-    global status_cache
+    import platform
     
-    # Verifica se o cache é válido
-    current_time = datetime.utcnow()
-    cache_valid = (
-        status_cache["last_check"] is not None and
-        (current_time - status_cache["last_check"]).total_seconds() < STATUS_CACHE_TTL
-    )
+    # Informações do sistema
+    system_info = {
+        "platform": platform.platform(),
+        "python": platform.python_version(),
+    }
     
-    # Se o cache for válido e não estamos forçando uma verificação, retorna o cache
-    if cache_valid and not force_check:
-        return {
-            "status": status_cache["status"],
-            "redis": status_cache["redis"],
-            "database": status_cache["database"],
-            "timestamp": status_cache["timestamp"],
-            "cached": True,
-            "cache_age": int((current_time - status_cache["last_check"]).total_seconds()),
-            "cache_ttl": STATUS_CACHE_TTL,
-            **({"db_error": status_cache["db_error"]} if status_cache["db_error"] else {}),
-            **({"redis_error": status_cache["redis_error"]} if status_cache["redis_error"] else {}),
-            "version": "1.0.0"
-        }
-    
-    # Caso contrário, faz uma nova verificação
-    redis_ok = True
-    redis_error = None
+    # Verifica conexões
+    db_status = "unknown"
+    redis_status = "unknown"
     
     try:
+        # Tenta importar e usar check_db_connection
+        try:
+            from app.models import check_db_connection
+            db_ok = check_db_connection()
+            db_status = "connected" if db_ok else "error"
+        except ImportError:
+            # Fallback para verificação direta
+            try:
+                from sqlalchemy.orm import Session
+                from app.models import SessionLocal
+                db = SessionLocal()
+                db.execute(text("SELECT 1"))
+                db.close()
+                db_status = "connected"
+            except Exception as e:
+                logger.error(f"Erro ao verificar banco de dados: {str(e)}")
+                db_status = "error"
+    except Exception as e:
+        logger.error(f"Erro ao verificar status do banco de dados: {str(e)}")
+        db_status = "error"
+    
+    try:
+        # Tenta verificar o Redis
+        from app.tasks import check_redis_connection
         redis_ok = check_redis_connection(verbose=False)
+        redis_status = "connected" if redis_ok else "disconnected"
     except Exception as e:
-        redis_ok = False
-        redis_error = str(e)
-        logger.error(f"Erro ao verificar Redis: {str(e)}")
+        logger.error(f"Erro ao verificar status do Redis: {str(e)}")
+        redis_status = "error"
     
-    # Verificar conexão com o banco de dados
-    db_ok = True
-    db_error = None
+    # Tenta obter informações de memória, mas não falha se não conseguir
     try:
-        db = SessionLocal()
-        db.execute(text("SELECT 1"))
-        db.close()
-    except Exception as e:
-        db_ok = False
-        db_error = str(e)
-        logger.error(f"Erro ao verificar banco de dados: {str(e)}")
+        import psutil
+        memory = psutil.virtual_memory()
+        system_info["memory"] = {
+            "total": f"{memory.total / (1024 * 1024):.1f} MB",
+            "available": f"{memory.available / (1024 * 1024):.1f} MB",
+            "percent": f"{memory.percent}%"
+        }
+    except Exception:
+        # Ignora erros ao obter informações de memória
+        pass
     
-    status_ok = redis_ok and db_ok
+    # Status do plano Free
+    system_info["free_plan"] = os.environ.get("RENDER_SERVICE_TYPE") == "free"
     
-    # Atualiza o cache
-    status_cache = {
-        "last_check": current_time,
-        "timestamp": current_time.isoformat(),
-        "redis": "connected" if redis_ok else "disconnected",
-        "database": "connected" if db_ok else "disconnected",
-        "status": "ok" if status_ok else "degraded",
-        "db_error": db_error,
-        "redis_error": redis_error,
-        "cache_ttl": STATUS_CACHE_TTL,
+    return {
+        "status": "ok",
+        "timestamp": datetime.now().isoformat(),
+        "environment": os.environ.get("ENVIRONMENT", "development"),
+        "version": "1.0.0",
+        "database": db_status,
+        "redis": redis_status,
+        "system_info": system_info
     }
-    
-    response = {
-        "status": status_cache["status"],
-        "redis": status_cache["redis"],
-        "database": status_cache["database"],
-        "timestamp": status_cache["timestamp"],
-        "cached": False,
-        "version": "1.0.0"
-    }
-    
-    # Adiciona detalhes do erro se houver
-    if db_error:
-        response["db_error"] = db_error
-    
-    if redis_error:
-        response["redis_error"] = redis_error
-    
-    return response
 
 
 @app.get("/api/config")
